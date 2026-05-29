@@ -19,7 +19,7 @@ class FaceMeshViewer:
         self.mp_drawing_styles = mp.solutions.drawing_styles
         self.mouth_delta_history = []
         self.HISTORY_LEN = 10
-        self.DROOP_THRESHOLD = 0.01  # ~1 % vysky tvare
+        self.DROOP_THRESHOLD = 0.01  # ~1% of face height
         self.droop_side_candidate = None 
         self.droop_start_time = None
         self.DROOP_DURATION = 7.0
@@ -60,12 +60,7 @@ class FaceMeshViewer:
 
     def process_frame(self, frame, face_landmarks):
         new_frame = frame.copy()
-        """
-        Hlavná funkcia:
-        - vstup: frame (BGR), face_landmarks (NormalizedLandmarkList alebo None)
-        - výstup: frame_droop, isDroop (bool), count (počet twitchov v okne)
-        """
-        status = "ŽIADNA TVÁR"
+        status = "NO FACE"
         color = (0, 255, 255)
         now = time.time()
         is_droop = False
@@ -126,7 +121,6 @@ class FaceMeshViewer:
                 if self.droop_side_candidate is not None and self.droop_start_time is not None:
                     duration = now - self.droop_start_time
 
-                    # twitch len ak trval v tomto intervale
                     if (self.TWITCH_MIN_DURATION
                             <= duration
                             <= self.TWITCH_MAX_DURATION):
@@ -136,22 +130,21 @@ class FaceMeshViewer:
 
                         self.twitch_history.append(now)
 
-                    # ak > TWITCH_MAX_DURATION a < DROOP_DURATION → ignorujeme (nič)
+                    # if > TWITCH_MAX_DURATION and < DROOP_DURATION → ignore
 
                 self.droop_side_candidate = None
                 self.droop_start_time = None
 
                 if self.last_twitch_time is not None and (now - self.last_twitch_time) <= self.TWITCH_DISPLAY_TIME:
-                    side_text = "ĽAVÁ STRANA" if self.last_twitch_side == "LEFT" else "PRAVÁ STRANA"
+                    side_text = "LEFT SIDE" if self.last_twitch_side == "LEFT" else "RIGHT SIDE"
                     status = f"TWITCH: {side_text} ({self.last_twitch_duration:.2f}s)"
                     color = (0, 255, 255)
                 else:
-                    status = "SYMETRIA OK"
+                    status = "SYMMETRY OK"
                     color = (0, 255, 0)
                     is_droop = False
 
             else:
-                # bežiaca asymetria
                 if self.droop_side_candidate != side_candidate:
                     self.droop_side_candidate = side_candidate
                     self.droop_start_time = now
@@ -160,15 +153,14 @@ class FaceMeshViewer:
                 if self.droop_start_time is not None:
                     elapsed = now - self.droop_start_time
 
-                side_text = "ĽAVÁ STRANA" if side_candidate == "LEFT" else "PRAVÁ STRANA"
+                side_text = "LEFT SIDE" if side_candidate == "LEFT" else "RIGHT SIDE"
 
                 if elapsed >= self.DROOP_DURATION:
-                    status = f"DROOP: {side_text} (≥ {self.DROOP_DURATION:.0f}s)"
+                    status = f"DROOP: {side_text} (>= {self.DROOP_DURATION:.0f}s)"
                     color = (0, 0, 255)
                     is_droop = True
                 else:
-                    # len info, že beží asymetria, ale finálne rozhodnutie padne až keď skončí
-                    status = f"SLEDUJEM MOŽNÝ DROOP: {side_text} ({elapsed:.1f}/{self.DROOP_DURATION:.0f}s)"
+                    status = f"MONITORING POSSIBLE DROOP: {side_text} ({elapsed:.1f}/{self.DROOP_DURATION:.0f}s)"
                     color = (0, 255, 255)
                     is_droop = False
 

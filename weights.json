@@ -1,0 +1,11 @@
+{
+  "w_bpm": 0.25,
+  "w_color": 0.1,
+  "w_shake": 0.75,
+  "w_twitch": 0.55,
+  "w_blink": 0.3,
+  "w_freeze": 0.4,
+  "w_asym": 0.53,
+  "w_blink_nc": 0.3,
+  "w_bpm_nc": 0.25
+}

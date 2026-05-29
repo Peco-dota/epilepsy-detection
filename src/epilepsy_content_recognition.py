@@ -6,8 +6,10 @@ import mss
 import threading
 import subprocess
 import os
-from tkinter import Tk, Toplevel, Label, Button, Frame
-from tkinter import font as tkfont
+import sys
+from PySide6.QtWidgets import QApplication, QDialog, QVBoxLayout, QLabel, QPushButton
+from PySide6.QtCore import Qt, QTimer
+from PySide6.QtGui import QFont
 import Quartz
 from Quartz import CGWindowListCopyWindowInfo, CGWindowListCreateImage, CGRectNull
 from Quartz import kCGWindowListOptionOnScreenOnly, kCGWindowListExcludeDesktopElements
@@ -254,19 +256,35 @@ class EpilepsyContentDetector:
         self.prev_gray = None
         self.transition_cooldown_until = 0.0
 
+NOTIF_STYLE = """
+QDialog {
+    background-color: #1a1a2e;
+}
+QLabel { color: white; }
+QPushButton {
+    background-color: #4ecdc4;
+    color: #1a1a2e;
+    border-radius: 8px;
+    padding: 8px 24px;
+    font-weight: bold;
+    font-size: 13px;
+}
+QPushButton:hover { background-color: #94e2d5; }
+"""
+
+
 class EpilepsyProtector:
-    def __init__(self, root, fps=30):
-        self.root = root
+    def __init__(self, app, fps=30):
+        self.app = app
         self.fps = fps
-        self.screen_width = root.winfo_screenwidth()
-        self.screen_height = root.winfo_screenheight()
+        screen = app.primaryScreen().geometry()
+        self.screen_width = screen.width()
+        self.screen_height = screen.height()
         self.lock = threading.Lock()
         self.visible = False
         self.blocked_apps = set()
-        self.last_blocked_app = None
-        self.notification_window = None
-        self.window_id = None
-    
+        self.notification_dialog = None
+
     def get_frontmost_app(self):
         window_list = CGWindowListCopyWindowInfo(
             kCGWindowListOptionOnScreenOnly | kCGWindowListExcludeDesktopElements,
@@ -275,7 +293,8 @@ class EpilepsyProtector:
         for win in window_list:
             owner = win.get('kCGWindowOwnerName', '')
             layer = win.get('kCGWindowLayer', 0)
-            if owner and owner not in ['Python', 'python', 'Finder', 'Dock', 'SystemUIServer', 'Control Center', 'Notification Center']:
+            if owner and owner not in ['Python', 'python', 'Finder', 'Dock',
+                                        'SystemUIServer', 'Control Center', 'Notification Center']:
                 if layer == 0:
                     return {
                         'name': owner,
@@ -284,73 +303,62 @@ class EpilepsyProtector:
                         'bounds': win.get('kCGWindowBounds', {})
                     }
         return None
-    
+
     def hide_app(self, app_info):
         if not app_info:
             return False
         try:
-            app_name = app_info['name']
-            script = f'''
-            tell application "System Events"
-                set visible of process "{app_name}" to false
-            end tell
-            '''
+            script = f'tell application "System Events" to set visible of process "{app_info["name"]}" to false'
             subprocess.run(['osascript', '-e', script], capture_output=True, timeout=2)
-            self.blocked_apps.add(app_name)
-            self.last_blocked_app = app_info
+            self.blocked_apps.add(app_info['name'])
             return True
-        except:
+        except Exception:
             return False
-    
+
     def show_notification(self, app_info, warnings):
-        if self.notification_window:
-            try:
-                self.notification_window.destroy()
-            except:
-                pass
-        
-        self.notification_window = Toplevel(self.root)
-        self.notification_window.title("Epilepsia Ochrana")
-        self.notification_window.attributes('-topmost', True)
-        
-        width, height = 500, 250
-        x = (self.screen_width - width) // 2
-        y = (self.screen_height - height) // 2
-        self.notification_window.geometry(f"{width}x{height}+{x}+{y}")
-        
-        frame = Frame(self.notification_window, bg='#1a1a2e', padx=20, pady=20)
-        frame.pack(fill='both', expand=True)
-        
-        title_font = tkfont.Font(family='Helvetica', size=18, weight='bold')
-        text_font = tkfont.Font(family='Helvetica', size=12)
-        
-        Label(frame, text="⚠️ EPILEPSIA OCHRANA", font=title_font, fg='#ff6b6b', bg='#1a1a2e').pack(pady=(0, 15))
-        
-        app_name = app_info['name'] if app_info else 'Neznáma aplikácia'
-        window_name = app_info.get('window_name', '') if app_info else ''
-        
-        Label(frame, text=f"Aplikácia bola skrytá:", font=text_font, fg='white', bg='#1a1a2e').pack()
-        Label(frame, text=f"{app_name}", font=title_font, fg='#4ecdc4', bg='#1a1a2e').pack(pady=(5, 0))
-        if window_name:
-            Label(frame, text=f"({window_name})", font=text_font, fg='#888', bg='#1a1a2e').pack()
-        
-        Label(frame, text=f"Dôvod: {', '.join(warnings)}", font=text_font, fg='#feca57', bg='#1a1a2e').pack(pady=(15, 0))
-        
-        Button(frame, text="OK", command=self.notification_window.destroy, 
-               bg='#4ecdc4', fg='black', font=text_font, width=15).pack(pady=(20, 0))
-        
-        self.notification_window.after(10000, lambda: self.close_notification())
-    
-    def close_notification(self):
-        if self.notification_window:
-            try:
-                self.notification_window.destroy()
-            except:
-                pass
-            self.notification_window = None
-    
-    def get_window_id(self):
-        return self.window_id
+        if self.notification_dialog:
+            self.notification_dialog.close()
+
+        dlg = QDialog()
+        dlg.setWindowTitle("Epilepsy Protection")
+        dlg.setStyleSheet(NOTIF_STYLE)
+        dlg.setFixedSize(480, 240)
+        dlg.setWindowFlags(Qt.WindowStaysOnTopHint | Qt.FramelessWindowHint)
+
+        layout = QVBoxLayout(dlg)
+        layout.setContentsMargins(30, 24, 30, 24)
+        layout.setSpacing(10)
+
+        t = QLabel("⚠️  EPILEPSY PROTECTION")
+        t.setFont(QFont("SF Pro Display", 18, QFont.Bold))
+        t.setStyleSheet("color: #ff6b6b;")
+        t.setAlignment(Qt.AlignCenter)
+        layout.addWidget(t)
+
+        app_name = app_info['name'] if app_info else 'Unknown application'
+        hidden_lbl = QLabel(f"Application hidden:  {app_name}")
+        hidden_lbl.setFont(QFont("SF Pro Text", 13))
+        hidden_lbl.setStyleSheet("color: #4ecdc4;")
+        hidden_lbl.setAlignment(Qt.AlignCenter)
+        layout.addWidget(hidden_lbl)
+
+        reason_lbl = QLabel(f"Reason: {', '.join(warnings)}")
+        reason_lbl.setFont(QFont("SF Pro Text", 12))
+        reason_lbl.setStyleSheet("color: #feca57;")
+        reason_lbl.setAlignment(Qt.AlignCenter)
+        layout.addWidget(reason_lbl)
+
+        ok_btn = QPushButton("OK")
+        ok_btn.clicked.connect(dlg.close)
+        layout.addWidget(ok_btn, alignment=Qt.AlignCenter)
+
+        # centre on screen
+        dlg.move((self.screen_width - dlg.width()) // 2,
+                  (self.screen_height - dlg.height()) // 2)
+
+        self.notification_dialog = dlg
+        QTimer.singleShot(10000, dlg.close)
+        dlg.show()
 
     def update(self, is_dangerous, warnings=None):
         with self.lock:
@@ -358,14 +366,15 @@ class EpilepsyProtector:
                 app_info = self.get_frontmost_app()
                 if app_info and app_info['name'] not in self.blocked_apps:
                     if self.hide_app(app_info):
-                        self.root.after(0, lambda: self.show_notification(app_info, warnings or ['Nebezpečné blikanie']))
+                        self.show_notification(app_info, warnings or ['Dangerous flashing'])
                         self.visible = True
             elif not is_dangerous:
                 self.visible = False
                 self.blocked_apps.clear()
 
     def destroy(self):
-        self.close_notification()
+        if self.notification_dialog:
+            self.notification_dialog.close()
 
 
 class ScreenMonitor:
@@ -374,14 +383,13 @@ class ScreenMonitor:
         self.monitor_number = monitor_number
         self.verbose = verbose
         self.detector = EpilepsyContentDetector(fps=fps)
-        self.root = Tk()
-        self.root.withdraw()
+        self.app = QApplication.instance() or QApplication(sys.argv)
         try:
             from AppKit import NSApp, NSApplicationActivationPolicyAccessory
             NSApp.setActivationPolicy_(NSApplicationActivationPolicyAccessory)
-        except:
+        except Exception:
             pass
-        self.protector = EpilepsyProtector(self.root, fps=fps)
+        self.protector = EpilepsyProtector(self.app, fps=fps)
         self.is_running = True
         self.monitor_rect = None
 
@@ -459,7 +467,7 @@ class ScreenMonitor:
                 if self.verbose:
                     print(f"DANGER: {is_danger} | flash_rate: {result['flash_rate']:.2f} Hz | warnings: {warnings}")
                 
-                self.root.after(0, lambda d=is_danger, w=warnings: self.protector.update(d, w))
+                self.protector.update(is_danger, warnings)
                         
             except Exception as e:
                 if self.verbose:
@@ -469,14 +477,14 @@ class ScreenMonitor:
             time.sleep(sleep_time)
 
     def run(self):
-        print("🛡️ Epilepsia ochrana beží na pozadí...")
-        print("   Stlač Ctrl+C pre ukončenie")
+        print("🛡️ Epilepsy protection running in background...")
+        print("   Press Ctrl+C to stop")
         monitor_thread = threading.Thread(target=self.monitor_loop, daemon=True)
         monitor_thread.start()
         try:
-            self.root.mainloop()
+            self.app.exec()
         except KeyboardInterrupt:
-            print("\n👋 Ukončujem...")
+            print("\n👋 Shutting down...")
         finally:
             self.is_running = False
             self.protector.destroy()

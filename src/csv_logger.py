@@ -36,7 +36,9 @@ class CSVLogger:
             "twitch_count",
             "freeze_score",
             "freeze_duration",
-            "is_frozen"
+            "is_frozen",
+            "pre_ictal_score",
+            "pre_ictal_stage"
         ]
         
         self.file = open(self.filepath, mode='w', newline='', encoding='utf-8')
@@ -79,9 +81,16 @@ class CSVLogger:
             return None
 
         for row in rows:
+            is_calibrated = row.get('is_calibrated', '').lower() == 'true'
             for key in data.keys():
                 try:
                     val = float(row.get(key, 0) or 0)
+                    # skip heart_rate and health_score rows from uncalibrated frames
+                    if key in ('heart_rate', 'health_score') and not is_calibrated:
+                        continue
+                    # skip zero heart_rate readings (uncalibrated or missing)
+                    if key == 'heart_rate' and val == 0:
+                        continue
                     data[key].append(val)
                 except (ValueError, TypeError):
                     pass
@@ -119,37 +128,51 @@ class CSVLogger:
     def get_summary_for_llm(self):
         summary = self.generate_summary()
         if not summary:
-            return "Žiadne dáta na analýzu."
+            return "No data to analyze."
 
-        text = f"""DÁTA ZO SLEDOVANIA OSOBY S EPILEPSIOU
-=====================================
-Dĺžka sledovania: {summary['session_duration_seconds']} sekúnd
-Počet záznamov: {summary['total_records']}
+        duration = summary['session_duration_seconds']
+        total = summary['total_records']
 
-PRIEMERNÉ HODNOTY SKÓRE (0-1 škála, vyššie = väčšia abnormalita):
-"""
-        
-        score_keys = ['health_score', 'head_score', 'droop_score', 'eye_score', 'blink_score', 'twitch_score', 'freeze_score']
+        def pct(count):
+            return f"{round(count / total * 100)}%" if total > 0 else "N/A"
+
+        score_keys = ['head_score', 'droop_score', 'eye_score', 'blink_score', 'twitch_score', 'freeze_score']
+        scores_text = ""
         for key in score_keys:
             if key in summary['metrics']:
                 m = summary['metrics'][key]
-                text += f"- {key}: priemer={m['avg']}, max={m['max']}, min={m['min']}\n"
+                scores_text += f"- {key}: avg={m['avg']} max={m['max']}\n"
 
-        text += f"""
-DETAILY METRÍK:
-- Tep srdca (BPM): priemer={summary['metrics'].get('heart_rate', {}).get('avg', 'N/A')}, max={summary['metrics'].get('heart_rate', {}).get('max', 'N/A')}
-- Počet žmurknutí: max={summary['metrics'].get('blink_count', {}).get('max', 'N/A')}
-- Frekvencia žmurkania: priemer={summary['metrics'].get('blink_rate', {}).get('avg', 'N/A')}/s
-- Počet záškubov: max={summary['metrics'].get('twitch_count', {}).get('max', 'N/A')}
-- Energia pohybu hlavy: max={summary['metrics'].get('energy', {}).get('max', 'N/A')}
+        hr = summary['metrics'].get('heart_rate', {})
+        hr_text = (
+            f"avg={hr.get('avg', 'N/A')} BPM, max={hr.get('max', 'N/A')} BPM"
+            if hr else "not available (session too short to calibrate)"
+        )
 
-VÝZNAMNÉ UDALOSTI:
-- Epizódy zamrznutia tváre: {summary['freeze_episodes']}
-- Momenty s vysokým žmurkaním (>0.7): {summary['high_events']['high_blink_moments']}
-- Momenty so záškubmi (>0.5): {summary['high_events']['high_twitch_moments']}
-- Momenty s trasom hlavy (>0.7): {summary['high_events']['high_shake_moments']}
-- Momenty s asymetriou tváre (>0.5): {summary['high_events']['high_droop_moments']}
-- Momenty s abnormálnym pohybom očí (>0.5): {summary['high_events']['high_eye_deviation_moments']}
+        he = summary['high_events']
+        text = f"""EPILEPSY MONITORING SESSION DATA
+=====================================
+Session duration: {duration} seconds ({total} logged records)
+
+CONTEXT FOR INTERPRETATION:
+- Scores are on a 0.0-1.0 scale. Values below 0.3 are generally normal.
+- "High moments" counts are out of {total} total records ({duration} seconds).
+- Face freeze is triggered whenever the face is still — normal during calm sitting.
+- Eye score can be elevated during normal reading or looking around.
+- A count of high moments should be read as a percentage of the session, not as isolated alarming events.
+
+SCORES (avg and max over session):
+{scores_text}
+HEART RATE (calibrated frames only):
+- {hr_text}
+
+HIGH-SCORE MOMENTS (% of session):
+- High blink (>0.7): {he['high_blink_moments']} records = {pct(he['high_blink_moments'])} of session
+- Twitching (>0.5): {he['high_twitch_moments']} records = {pct(he['high_twitch_moments'])} of session
+- Head shake (>0.7): {he['high_shake_moments']} records = {pct(he['high_shake_moments'])} of session
+- Face asymmetry (>0.5): {he['high_droop_moments']} records = {pct(he['high_droop_moments'])} of session
+- Eye movement (>0.5): {he['high_eye_deviation_moments']} records = {pct(he['high_eye_deviation_moments'])} of session
+- Face frozen: {summary['freeze_episodes']} records = {pct(summary['freeze_episodes'])} of session
 """
         return text
 
