@@ -4,10 +4,11 @@ mediapipe==0.10.14
 pyautogui
 scikit-learn
 mss
-pyobjc-framework-Quartz
-pyobjc-framework-Cocoa
+pyobjc-framework-Quartz # For macOS screen capture / comment it when using on Windows
+pyobjc-framework-Cocoa # For macOS screen capture / comment it when using on Windows
 scipy
 PySide6
 packaging
 openai
 python-dotenv
+twilio

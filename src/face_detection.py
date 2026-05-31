@@ -125,7 +125,10 @@ class FaceDetection:
         skip_keywords = ['iphone', 'ipad', 'continuity', 'droid']
 
         for index in range(6):
-            cap = cv2.VideoCapture(index, cv2.CAP_AVFOUNDATION)
+            if sys.platform == "darwin":
+                cap = cv2.VideoCapture(index, cv2.CAP_AVFOUNDATION)
+            else:
+                cap = cv2.VideoCapture(index, cv2.CAP_DSHOW) # for Windows
             if not cap.isOpened():
                 continue
             # cv2 doesn't expose camera name directly on macOS, so use AVFoundation via subprocess
@@ -152,7 +155,9 @@ class FaceDetection:
             cap.release()
 
         # fallback: just use index 0
-        return cv2.VideoCapture(0, cv2.CAP_AVFOUNDATION)
+        if sys.platform == "darwin":
+            return cv2.VideoCapture(0, cv2.CAP_AVFOUNDATION)
+        return cv2.VideoCapture(0, cv2.CAP_DSHOW)
 
     def apply_context_multipliers(self, multipliers):
         """
@@ -473,6 +478,8 @@ class FaceDetection:
                 key = cv2.waitKey(5) & 0xFF
                 if key == ord('q'):
                     break
+                elif key == ord('s') and self.sms_client:
+                    self.sms_client.send_message("⚠️ Test alert: simulated seizure risk (debug hotkey).")
                 elif self.pending_feedback:
                     if key == ord('y') or key == ord('Y'):
                         self._apply_feedback(correct=True)

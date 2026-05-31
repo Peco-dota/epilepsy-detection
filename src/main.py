@@ -1,8 +1,17 @@
+import os
 from face_detection import FaceDetection
 from gpt_client import AIClient
+from pathlib import Path
+from dotenv import load_dotenv
+from twilio_client import TwilioClient
+
+load_dotenv(dotenv_path=Path(__file__).with_name(".env"))
 
 client = AIClient()
+
 twilio_client = None
+if os.getenv("TWILIO_ACCOUNT_SID") and os.getenv("TWILIO_AUTH_TOKEN") and os.getenv("TWILIO_WHATSAPP_FROM") and os.getenv("TELEPHONE_NUMBER"):
+    twilio_client = TwilioClient()
 
 debug=True
 solo_video=False  # False = multi-window mosaic (all detectors visible), True = single window
