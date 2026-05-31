@@ -11,20 +11,20 @@ import re
 
 STYLE = """
 QMainWindow, QWidget {
-    background-color: #1e1e2e;
-    color: #cdd6f4;
+    background-color: #f4f3ee;
+    color: #1c1917;
     font-family: 'SF Pro Text', 'Segoe UI', sans-serif;
 }
-QLabel { color: #cdd6f4; }
+QLabel { color: #1c1917; }
 QTextEdit {
-    background-color: #313244;
-    color: #cdd6f4;
-    border: 1px solid #45475a;
+    background-color: #ffffff;
+    color: #1c1917;
+    border: 1px solid rgba(177,173,161,0.55);
     border-radius: 8px;
     padding: 10px;
     font-size: 14px;
 }
-QTextEdit:focus { border: 1px solid #89b4fa; }
+QTextEdit:focus { border: 1px solid #c15f3c; }
 QPushButton {
     border-radius: 8px;
     padding: 10px 24px;
@@ -33,46 +33,53 @@ QPushButton {
     border: none;
 }
 QPushButton#primary {
-    background-color: #89b4fa;
-    color: #1e1e2e;
+    background: qlineargradient(x1:0,y1:0,x2:1,y2:0,stop:0 #c15f3c,stop:1 #d4724e);
+    color: #ffffff;
 }
-QPushButton#primary:hover { background-color: #b4befe; }
-QPushButton#primary:disabled { background-color: #45475a; color: #6c7086; }
+QPushButton#primary:hover {
+    background: qlineargradient(x1:0,y1:0,x2:1,y2:0,stop:0 #ad5434,stop:1 #c46444);
+}
+QPushButton#primary:disabled { background-color: rgba(177,173,161,0.35); color: #b1ada1; }
 QPushButton#secondary {
-    background-color: #45475a;
-    color: #cdd6f4;
+    background-color: rgba(177,173,161,0.2);
+    color: #1c1917;
+    border: 1px solid rgba(177,173,161,0.5);
 }
-QPushButton#secondary:hover { background-color: #585b70; }
+QPushButton#secondary:hover { background-color: rgba(177,173,161,0.35); }
 QScrollArea { border: none; background-color: transparent; }
 QScrollBar:vertical {
-    background: #313244; width: 6px; border-radius: 3px;
+    background: transparent; width: 4px; border-radius: 2px;
 }
-QScrollBar::handle:vertical { background: #585b70; border-radius: 3px; }
+QScrollBar::handle:vertical { background: rgba(177,173,161,0.5); border-radius: 2px; }
 QSlider::groove:horizontal {
-    height: 4px; background: #45475a; border-radius: 2px;
+    height: 4px; background: rgba(177,173,161,0.4); border-radius: 2px;
 }
 QSlider::handle:horizontal {
-    background: #89b4fa; width: 16px; height: 16px;
+    background: #c15f3c; width: 16px; height: 16px;
     margin: -6px 0; border-radius: 8px;
 }
-QSlider::sub-page:horizontal { background: #89b4fa; border-radius: 2px; }
-QFrame#card { background-color: #313244; border-radius: 12px; }
+QSlider::sub-page:horizontal { background: #c15f3c; border-radius: 2px; }
+QFrame#card { background-color: #ffffff; border-radius: 12px; border: 1px solid rgba(177,173,161,0.3); }
 QPushButton#chip {
-    background-color: #313244;
-    color: #a6adc8;
-    border: 1px solid #45475a;
-    border-radius: 20px;
-    padding: 8px 18px;
+    background-color: #ffffff;
+    color: #6b6460;
+    border: 1.5px solid rgba(177,173,161,0.6);
+    border-radius: 8px;
+    padding: 0px;
     font-size: 13px;
     font-weight: normal;
 }
 QPushButton#chip:checked {
-    background-color: #89b4fa;
-    color: #1e1e2e;
-    border: 1px solid #89b4fa;
-    font-weight: bold;
+    background-color: #c15f3c;
+    color: #ffffff;
+    border: 1.5px solid #c15f3c;
+    font-weight: 600;
 }
-QPushButton#chip:hover { border-color: #89b4fa; }
+QPushButton#chip:hover:!checked {
+    border-color: #c15f3c;
+    background-color: rgba(193,95,60,0.04);
+    color: #1c1917;
+}
 """
 
 
@@ -100,11 +107,20 @@ class _Chip(QPushButton):
 
 
 class EpiGuardMenu(QMainWindow):
-    def __init__(self, client=None):
+    # Emits the result dict when check-in completes, or None if the window is closed
+    done = Signal(object)
+
+    def __init__(self, client=None, mode='full', patient_name=''):
+        """
+        mode='full'    → 3 screens: context → symptoms → thresholds
+        mode='checkin' → context screen only, "Start Monitoring" goes direct to submit
+        """
         super().__init__()
         self.client = client
+        self.mode = mode
+        self.patient_name = patient_name or 'your child'
         self.result = None
-        self.context_multipliers = {}   # signal → float multiplier from context
+        self.context_multipliers = {}
         self.context_summary = ""
         self.defaults = {
             'blink_detection': 50, 'eye_tracking': 50, 'face_freeze': 50,
@@ -113,7 +129,7 @@ class EpiGuardMenu(QMainWindow):
         self.sliders = {}
 
         self.setWindowTitle("EPIGUARD")
-        self.setFixedSize(900, 680)
+        self.setFixedSize(860, 760)
         self.setStyleSheet(STYLE)
         self._center()
         self._show_screen_0()
@@ -136,7 +152,7 @@ class EpiGuardMenu(QMainWindow):
         for i, lbl in enumerate(labels):
             dot = QLabel(f"{'●' if i == current else '○'}  {lbl}")
             dot.setStyleSheet(
-                f"color: {'#89b4fa' if i == current else '#45475a'}; font-size: 12px;"
+                f"color: {'#c15f3c' if i == current else '#b1ada1'}; font-size: 12px;"
             )
             row.addWidget(dot)
         row.addStretch()
@@ -150,136 +166,105 @@ class EpiGuardMenu(QMainWindow):
         root = QWidget()
         self.setCentralWidget(root)
         layout = QVBoxLayout(root)
-        layout.setContentsMargins(60, 40, 60, 40)
-        layout.setSpacing(16)
+        layout.setContentsMargins(56, 24, 56, 24)
+        layout.setSpacing(0)
 
         layout.addWidget(self._step_indicator(0))
-        layout.addSpacing(10)
+        layout.addSpacing(12)
 
-        title = QLabel("EPIGUARD")
-        title.setFont(QFont("SF Pro Display", 32, QFont.Bold))
-        title.setStyleSheet("color: #89b4fa;")
+        title = QLabel("Good to see you!")
+        title.setFont(QFont("SF Pro Display", 24, QFont.Bold))
+        title.setStyleSheet("color: #c15f3c;")
         title.setAlignment(Qt.AlignCenter)
         layout.addWidget(title)
+        layout.addSpacing(3)
 
-        sub = QLabel("Before we start, tell us how the patient is doing today.")
+        sub = QLabel(f"Before monitoring {self.patient_name}, tell us how they're doing today.")
         sub.setFont(QFont("SF Pro Text", 13))
-        sub.setStyleSheet("color: #6c7086;")
+        sub.setStyleSheet("color: #8a847a;")
         sub.setAlignment(Qt.AlignCenter)
         layout.addWidget(sub)
+        layout.addSpacing(16)
 
-        layout.addSpacing(8)
+        def _section(question, options, group_attr, chips_attr):
+            lbl = QLabel(question)
+            lbl.setFont(QFont("SF Pro Text", 13, QFont.Bold))
+            lbl.setStyleSheet("color: #1c1917;")
+            layout.addWidget(lbl)
+            layout.addSpacing(7)
 
-        # ── Sleep ────────────────────────────────────────────────────────
-        sleep_lbl = QLabel("🌙  How much did they sleep last night?")
-        sleep_lbl.setFont(QFont("SF Pro Text", 13, QFont.Bold))
-        layout.addWidget(sleep_lbl)
+            row = QHBoxLayout()
+            row.setSpacing(8)
+            grp = QButtonGroup(self)
+            grp.setExclusive(True)
+            chips = []
+            for text in options:
+                c = _Chip(text)
+                c.setFixedHeight(40)
+                grp.addButton(c)
+                chips.append(c)
+                row.addWidget(c, stretch=1)
+            layout.addLayout(row)
+            layout.addSpacing(16)
 
-        self._sleep_chips = []
-        sleep_row = QHBoxLayout()
-        sleep_row.setSpacing(8)
-        self._sleep_group = QButtonGroup(self)
-        self._sleep_group.setExclusive(True)
-        for label in ["< 4 hours", "4–6 hours", "6–8 hours", "8+ hours"]:
-            c = _Chip(label)
-            self._sleep_group.addButton(c)
-            self._sleep_chips.append(c)
-            sleep_row.addWidget(c)
-        sleep_row.addStretch()
-        layout.addLayout(sleep_row)
+            setattr(self, group_attr, grp)
+            setattr(self, chips_attr, chips)
 
-        layout.addSpacing(6)
+        _section("How much did they sleep last night?",
+                 ["< 4 hours", "4–6 hours", "6–8 hours", "8+ hours"],
+                 '_sleep_group', '_sleep_chips')
+        _section("Stress or anxiety level today?",
+                 ["Calm", "Mildly stressed", "Very stressed"],
+                 '_stress_group', '_stress_chips')
+        _section("Medication status today?",
+                 ["Taken on time", "Taken late", "Missed dose", "No medication"],
+                 '_med_group', '_med_chips')
+        _section("Screen exposure in the last 2 hours?",
+                 ["None", "Some", "A lot"],
+                 '_screen_group', '_screen_chips')
 
-        # ── Stress ───────────────────────────────────────────────────────
-        stress_lbl = QLabel("😰  Stress or anxiety level today?")
-        stress_lbl.setFont(QFont("SF Pro Text", 13, QFont.Bold))
-        layout.addWidget(stress_lbl)
-
-        self._stress_chips = []
-        stress_row = QHBoxLayout()
-        stress_row.setSpacing(8)
-        self._stress_group = QButtonGroup(self)
-        self._stress_group.setExclusive(True)
-        for label in ["Calm", "Mildly stressed", "Very stressed"]:
-            c = _Chip(label)
-            self._stress_group.addButton(c)
-            self._stress_chips.append(c)
-            stress_row.addWidget(c)
-        stress_row.addStretch()
-        layout.addLayout(stress_row)
-
-        layout.addSpacing(6)
-
-        # ── Medication ───────────────────────────────────────────────────
-        med_lbl = QLabel("💊  Medication status today?")
-        med_lbl.setFont(QFont("SF Pro Text", 13, QFont.Bold))
-        layout.addWidget(med_lbl)
-
-        self._med_chips = []
-        med_row = QHBoxLayout()
-        med_row.setSpacing(8)
-        self._med_group = QButtonGroup(self)
-        self._med_group.setExclusive(True)
-        for label in ["Taken on time", "Taken late", "Missed dose", "No medication"]:
-            c = _Chip(label)
-            self._med_group.addButton(c)
-            self._med_chips.append(c)
-            med_row.addWidget(c)
-        med_row.addStretch()
-        layout.addLayout(med_row)
-
-        layout.addSpacing(6)
-
-        # ── Screen exposure ──────────────────────────────────────────────
-        screen_lbl = QLabel("📱  Screen exposure in the last 2 hours?")
-        screen_lbl.setFont(QFont("SF Pro Text", 13, QFont.Bold))
-        layout.addWidget(screen_lbl)
-
-        self._screen_chips = []
-        screen_row = QHBoxLayout()
-        screen_row.setSpacing(8)
-        self._screen_group = QButtonGroup(self)
-        self._screen_group.setExclusive(True)
-        for label in ["None", "Some", "A lot"]:
-            c = _Chip(label)
-            self._screen_group.addButton(c)
-            self._screen_chips.append(c)
-            screen_row.addWidget(c)
-        screen_row.addStretch()
-        layout.addLayout(screen_row)
-
-        layout.addSpacing(6)
-
-        # ── Free text ────────────────────────────────────────────────────
-        other_lbl = QLabel("📝  Anything else to note? (optional)")
+        other_lbl = QLabel("Anything else to note? (optional)")
         other_lbl.setFont(QFont("SF Pro Text", 13, QFont.Bold))
+        other_lbl.setStyleSheet("color: #1c1917;")
         layout.addWidget(other_lbl)
-
+        layout.addSpacing(7)
         self.context_textbox = QTextEdit()
         self.context_textbox.setPlaceholderText(
             "e.g. Had a fever yesterday, seemed more tired than usual..."
         )
-        self.context_textbox.setFixedHeight(70)
+        self.context_textbox.setFixedHeight(60)
         layout.addWidget(self.context_textbox)
 
         layout.addStretch()
+        layout.addSpacing(14)
 
-        btn_row = QHBoxLayout()
-        btn_row.setSpacing(12)
-
-        self.context_btn = QPushButton("Continue →")
-        self.context_btn.setObjectName("primary")
-        self.context_btn.setMinimumHeight(44)
-        self.context_btn.clicked.connect(self._go_to_screen_1)
-        btn_row.addWidget(self.context_btn)
-
-        skip_btn = QPushButton("Skip")
-        skip_btn.setObjectName("secondary")
-        skip_btn.setMinimumHeight(44)
-        skip_btn.clicked.connect(self._show_screen_1)
-        btn_row.addWidget(skip_btn)
-
-        layout.addLayout(btn_row)
+        if self.mode == 'checkin':
+            self.context_btn = QPushButton("▶  Start Monitoring")
+            self.context_btn.setObjectName("primary")
+            self.context_btn.setFixedHeight(48)
+            self.context_btn.clicked.connect(self._go_to_screen_1)
+            layout.addWidget(self.context_btn)
+            layout.addSpacing(8)
+            skip_btn = QPushButton("Skip check-in")
+            skip_btn.setObjectName("secondary")
+            skip_btn.setFixedHeight(34)
+            skip_btn.clicked.connect(self._checkin_submit_empty)
+            layout.addWidget(skip_btn)
+        else:
+            btn_row = QHBoxLayout()
+            btn_row.setSpacing(10)
+            self.context_btn = QPushButton("Continue →")
+            self.context_btn.setObjectName("primary")
+            self.context_btn.setFixedHeight(44)
+            self.context_btn.clicked.connect(self._go_to_screen_1)
+            btn_row.addWidget(self.context_btn)
+            skip_btn = QPushButton("Skip")
+            skip_btn.setObjectName("secondary")
+            skip_btn.setFixedHeight(44)
+            skip_btn.setFixedWidth(90)
+            skip_btn.clicked.connect(self._show_screen_1)
+            btn_row.addWidget(skip_btn)
+            layout.addLayout(btn_row)
 
     def _go_to_screen_1(self):
         # Build plain-text summary of selected context
@@ -306,12 +291,14 @@ class EpiGuardMenu(QMainWindow):
             parts.append(f"Additional notes: {extra}")
 
         if not parts:
-            # nothing selected — skip context AI call
-            self._show_screen_1()
+            if self.mode == 'checkin':
+                self._checkin_submit_empty()
+            else:
+                self._show_screen_1()
             return
 
         self._context_text = '\n'.join(parts)
-        self.context_btn.setText("Analysing context...")
+        self.context_btn.setText("Analysing...")
         self.context_btn.setEnabled(False)
 
         if self.client is not None:
@@ -321,7 +308,15 @@ class EpiGuardMenu(QMainWindow):
             self._ctx_worker.finished.connect(self._on_context_response)
             self._ctx_worker.start()
         else:
-            self._show_screen_1()
+            if self.mode == 'checkin':
+                self._checkin_submit_empty()
+            else:
+                self._show_screen_1()
+
+    def _checkin_submit_empty(self):
+        self.result = {'context_multipliers': {}, 'context_summary': ''}
+        self.done.emit(self.result)
+        self.close()
 
     def _on_context_response(self, response):
         if response:
@@ -339,7 +334,15 @@ class EpiGuardMenu(QMainWindow):
                     print(f"📋 Context summary: {self.context_summary}")
             except Exception as e:
                 print(f"Error parsing context response: {e}")
-        self._show_screen_1()
+        if self.mode == 'checkin':
+            self.result = {
+                'context_multipliers': self.context_multipliers,
+                'context_summary': self.context_summary,
+            }
+            self.done.emit(self.result)
+            self.close()
+        else:
+            self._show_screen_1()
 
     # ── Screen 1: symptom input ──────────────────────────────────────────
     def _show_screen_1(self):
@@ -357,7 +360,7 @@ class EpiGuardMenu(QMainWindow):
         if self.context_summary:
             banner = QFrame()
             banner.setStyleSheet(
-                "background-color: #1e3a5f; border-radius: 8px; border-left: 3px solid #89b4fa;"
+                "background-color: rgba(193,95,60,0.07); border-radius: 8px; border-left: 3px solid #c15f3c;"
             )
             banner_layout = QHBoxLayout(banner)
             banner_layout.setContentsMargins(14, 10, 14, 10)
@@ -366,7 +369,7 @@ class EpiGuardMenu(QMainWindow):
             banner_layout.addWidget(icon)
             msg = QLabel(self.context_summary)
             msg.setWordWrap(True)
-            msg.setStyleSheet("color: #89b4fa; font-size: 12px; background: transparent;")
+            msg.setStyleSheet("color: #c15f3c; font-size: 12px; background: transparent;")
             banner_layout.addWidget(msg, stretch=1)
             layout.addWidget(banner)
             layout.addSpacing(16)
@@ -378,7 +381,7 @@ class EpiGuardMenu(QMainWindow):
 
         sub = QLabel("Describe the typical seizure symptoms to calibrate detection.")
         sub.setFont(QFont("SF Pro Text", 13))
-        sub.setStyleSheet("color: #6c7086; margin-bottom: 20px;")
+        sub.setStyleSheet("color: #8a847a; margin-bottom: 20px;")
         layout.addWidget(sub)
 
         layout.addSpacing(16)
@@ -432,7 +435,7 @@ class EpiGuardMenu(QMainWindow):
             hint_text += " and today's context"
         hint = QLabel(hint_text)
         hint.setFont(QFont("SF Pro Text", 12))
-        hint.setStyleSheet("color: #6c7086; margin-bottom: 16px;")
+        hint.setStyleSheet("color: #8a847a; margin-bottom: 16px;")
         layout.addWidget(hint)
 
         scroll = QScrollArea()
@@ -469,18 +472,18 @@ class EpiGuardMenu(QMainWindow):
             mult = self.context_multipliers.get(ctx_key, 1.0)
             if mult > 1.05:
                 badge = QLabel(f"  ⚠ +{int((mult-1)*100)}% sensitivity")
-                badge.setStyleSheet("color: #f9e2af; font-size: 11px;")
+                badge.setStyleSheet("color: #b45309; font-size: 11px;")
                 top_row.addWidget(badge)
             elif mult < 0.95:
                 badge = QLabel(f"  ✓ -{int((1-mult)*100)}% sensitivity")
-                badge.setStyleSheet("color: #a6e3a1; font-size: 11px;")
+                badge.setStyleSheet("color: #2e7d32; font-size: 11px;")
                 top_row.addWidget(badge)
 
             top_row.addStretch()
 
             val_label = QLabel(str(self.defaults.get(key, 50)))
             val_label.setFont(QFont("SF Pro Text", 13, QFont.Bold))
-            val_label.setStyleSheet("color: #89b4fa; min-width: 32px;")
+            val_label.setStyleSheet("color: #c15f3c; min-width: 32px;")
             val_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
             top_row.addWidget(val_label)
             card_layout.addLayout(top_row)
@@ -575,10 +578,25 @@ class EpiGuardMenu(QMainWindow):
         }
         self.close()
 
+    def closeEvent(self, event):
+        # If window is closed (X button) before a result was emitted, signal cancellation
+        if self.result is None and self.mode == 'checkin':
+            self.done.emit(None)
+        event.accept()
+
 
 def show_menu_modern(client=None):
     app = QApplication.instance() or QApplication(sys.argv)
-    window = EpiGuardMenu(client=client)
+    window = EpiGuardMenu(client=client, mode='full')
+    window.show()
+    app.exec()
+    return window.result
+
+
+def show_checkin(client=None, patient_name=''):
+    """Daily quick check-in — context screen only, then starts monitoring."""
+    app = QApplication.instance() or QApplication(sys.argv)
+    window = EpiGuardMenu(client=client, mode='checkin', patient_name=patient_name)
     window.show()
     app.exec()
     return window.result

@@ -1,0 +1,25 @@
+{
+  "id": "1d1fd966-2e71-47e0-8a61-93adca0700ae",
+  "name": "Marek",
+  "age": "24",
+  "emergency_contact": "+421 948 793 318",
+  "setup_complete": true,
+  "created_at": "2026-05-31T19:11:55.652414",
+  "last_calibration": "2026-05-31T19:12:48.995757",
+  "avatar": {
+    "type": "preset",
+    "emoji": "\ud83d\udc09",
+    "bg": "#991B1B"
+  },
+  "weights": {
+    "w_bpm": 0.45,
+    "w_color": 0.45,
+    "w_shake": 0.55,
+    "w_twitch": 0.6,
+    "w_blink": 0.55,
+    "w_freeze": 0.5,
+    "w_asym": 0.6,
+    "w_blink_nc": 0.45,
+    "w_bpm_nc": 0.45
+  }
+}

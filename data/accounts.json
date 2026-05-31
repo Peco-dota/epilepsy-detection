@@ -1,0 +1,13 @@
+{
+  "accounts": [
+    {
+      "email": "admin@epiguard.app",
+      "password_hash": "d2d65c78aa6866b70e8ab42f7656a49ad49640fff9e35d4250cd1f0a225f1bc5",
+      "patient_ids": [
+        "1d1fd966-2e71-47e0-8a61-93adca0700ae",
+        "9177299a-65c5-4037-ae58-db3f6d6f70df"
+      ]
+    }
+  ],
+  "current_email": "admin@epiguard.app"
+}

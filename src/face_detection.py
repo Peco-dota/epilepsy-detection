@@ -5,6 +5,7 @@ import subprocess
 import sys
 import os
 import json
+import time
 import threading
 import select
 
@@ -62,7 +63,7 @@ def save_weights(weights):
         print(f"Could not save weights: {e}")
 
 class FaceDetection:
-    def __init__(self, debug=False, solo_video=True, ai_client=None, sms_client=None):
+    def __init__(self, debug=False, solo_video=True, ai_client=None, sms_client=None, patient_id=None):
         self.frame_index = 0
         self.frame_reset = 150
         self.debug = debug
@@ -71,6 +72,7 @@ class FaceDetection:
         self.epilepsy_process = None
         self.ai_client = ai_client
         self.sms_client = sms_client
+        self.patient_id = patient_id
         
         self.cap = self._open_builtin_camera()
         if not self.cap.isOpened():
@@ -110,23 +112,28 @@ class FaceDetection:
         self.shake = 0.0
         self.sms_sent = False
 
-        self.audio_rms = 0.0
-        self.audio_groan_count = 0
-        self.audio_warning = 0.0
-        self.audio_max_rms = 0.0
-        self.audio_triggered = False
-        self.audio_has_triggered = False
-
-        self.weights = load_weights()
+        if patient_id:
+            import account_store as _as
+            self.weights = _as.get_weights(patient_id)
+        else:
+            self.weights = load_weights()
         print(f"📊 Loaded weights: {self.weights}")
 
         self.pre_ictal = PreIctalDetector()
         self.context_multipliers = {}  # set externally from menu result
 
         # feedback state
-        self.pending_feedback = False     # waiting for Y/N after an alert
-        self.alert_scores_snapshot = {}  # scores at the moment alert fired
-        self.feedback_events = []        # list of {scores, correct} for end-of-session LLM recalibration
+        self.pending_feedback = False
+        self.alert_scores_snapshot = {}
+        self.feedback_events = []
+
+        # session meta
+        self.patient_name = ''
+        self._session_start = time.time()
+        self._review_requested = False   # set by global hotkey thread
+        self._auto_review_shown = False
+
+        self._setup_global_hotkey()
 
     def _open_builtin_camera(self):
         platform = sys.platform
@@ -136,34 +143,76 @@ class FaceDetection:
             preferred_keywords = ['facetime', 'built-in', 'integrated', 'internal']
             skip_keywords = ['iphone', 'ipad', 'continuity', 'droid']
 
-            for index in range(6):
+        for index in range(6):
+            if sys.platform == "darwin":
                 cap = cv2.VideoCapture(index, cv2.CAP_AVFOUNDATION)
-                if not cap.isOpened():
+            else:
+                cap = cv2.VideoCapture(index, cv2.CAP_DSHOW) # for Windows
+            if not cap.isOpened():
+                continue
+            # cv2 doesn't expose camera name directly on macOS, so use AVFoundation via subprocess
+            try:
+                import subprocess
+                result = subprocess.run(
+                    ['system_profiler', 'SPCameraDataType'],
+                    capture_output=True, text=True, timeout=3
+                )
+                lines = result.stdout.lower().split('\n')
+                # find camera names in order
+                camera_names = [l.strip().rstrip(':') for l in lines if l.strip().endswith(':') and 'camera' in l.lower()]
+                name = camera_names[index] if index < len(camera_names) else ''
+                if any(k in name for k in skip_keywords):
+                    cap.release()
                     continue
-                # cv2 doesn't expose camera name directly on macOS, so use AVFoundation via subprocess
-                try:
-                    result = subprocess.run(
-                        ['system_profiler', 'SPCameraDataType'],
-                        capture_output=True, text=True, timeout=3
-                    )
-                    lines = result.stdout.lower().split('\n')
-                    # find camera names in order
-                    camera_names = [l.strip().rstrip(':') for l in lines if l.strip().endswith(':') and 'camera' in l.lower()]
-                    name = camera_names[index] if index < len(camera_names) else ''
-                    if any(k in name for k in skip_keywords):
-                        cap.release()
-                        continue
-                    if any(k in name for k in preferred_keywords) or name == '':
-                        print(f"Using camera index {index}: '{name or 'unknown'}'")
-                        return cap
-                except Exception:
-                    # can't determine name — just use first available
-                    print(f"Using camera index {index}")
+                if any(k in name for k in preferred_keywords) or name == '':
+                    print(f"Using camera index {index}: '{name or 'unknown'}'")
                     return cap
-                cap.release()
+            except Exception:
+                # can't determine name — just use first available
+                print(f"Using camera index {index}")
+                return cap
+            cap.release()
 
-            # fallback: just use index 0
+        # fallback: just use index 0
+        if sys.platform == "darwin":
             return cv2.VideoCapture(0, cv2.CAP_AVFOUNDATION)
+        return cv2.VideoCapture(0, cv2.CAP_DSHOW)
+
+    def _setup_global_hotkey(self):
+        try:
+            from pynput import keyboard as _kb
+            def _on_hotkey():
+                self._review_requested = True
+            listener = _kb.GlobalHotKeys({'<cmd>+<shift>+r': _on_hotkey})
+            listener.start()
+            self._hotkey_listener = listener
+            print("⌨️  Global hotkey: Cmd+Shift+R → open review mid-session")
+        except Exception as e:
+            print(f"⚠️  Global hotkey unavailable: {e}")
+            print("   Grant Accessibility permissions in System Preferences → Security & Privacy if needed")
+
+    def _show_interim_review(self):
+        print("\n📊 Opening mid-session review (monitoring paused)...")
+        self.csv_logger.file.flush()
+        summary_text = self.csv_logger.get_summary_for_llm()
+
+        ai_analysis = None
+        if self.ai_client:
+            print("🤖 Generating interim analysis...")
+            ai_analysis = self.ai_client.analyze_session(summary_text)
+
+        from summary_window import SummaryWindow
+        sw = SummaryWindow()
+        sw.show_summary(
+            summary_text=summary_text,
+            ai_analysis=ai_analysis or '⏱ Interim session — full analysis available when you end monitoring.',
+            filepath=self.csv_logger.get_filepath(),
+            ai_client=self.ai_client,
+            current_weights=self.weights,
+            on_weights_saved=self._on_weights_saved,
+            is_interim=True,
+        )
+        print("📊 Monitoring resumed.")
 
         if platform.startswith("win"):
             # Windows: DirectShow tends to be the most reliable
@@ -494,6 +543,22 @@ class FaceDetection:
                         cv2.putText(frame, "Press Y = yes (correct)   N = no (false alarm)", (10, h-45),
                             cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 1)
 
+                    # session duration + review hint in bottom-right
+                    elapsed_min = int((time.time() - self._session_start) / 60)
+                    h_fr, w_fr = frame.shape[:2]
+                    duration_text = f"Session: {elapsed_min}m  |  R = review"
+                    (tw, _), _ = cv2.getTextSize(duration_text, cv2.FONT_HERSHEY_SIMPLEX, 0.45, 1)
+                    cv2.putText(frame, duration_text, (w_fr - tw - 10, h_fr - 10),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.45, (80, 80, 80), 1)
+
+                    # 2-hour auto-review nudge
+                    if elapsed_min >= 120 and not self._auto_review_shown:
+                        overlay = frame.copy()
+                        cv2.rectangle(overlay, (0, h_fr - 50), (w_fr, h_fr), (20, 20, 60), -1)
+                        cv2.addWeighted(overlay, 0.75, frame, 0.25, 0, frame)
+                        cv2.putText(frame, f"⏱  {elapsed_min}min session — press R to open review & recalibrate",
+                            (10, h_fr - 18), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (150, 180, 255), 1)
+
                     cv2.imshow('Epilepsy debug', frame)
                 else:
                     # guard against None frames when face was lost mid-frame
@@ -502,7 +567,6 @@ class FaceDetection:
                     top = cv2.hconcat([_safe(frame_freeze), _safe(frame_eye), _safe(frame_blinked)])
                     mid = cv2.hconcat([_safe(frame_twitch), _safe(frame_shake), _safe(drooping_frame)])
                     bottom = cv2.hconcat([_safe(frame_health), generate_black_frame(frame=frame, data=log_data), blank])
-                    # only show if all rows have the same width
                     if top.shape[1] == mid.shape[1] == bottom.shape[1]:
                         mosaic = cv2.vconcat([top, mid, bottom])
                         cv2.imshow("All Views debug", mosaic)
@@ -515,12 +579,22 @@ class FaceDetection:
                 key = cv2.waitKey(5) & 0xFF
                 if key == ord('q'):
                     break
+                elif key in (ord('r'), ord('R')) or self._review_requested:
+                    self._review_requested = False
+                    self._auto_review_shown = True
+                    self._show_interim_review()
+                elif key == ord('s') and self.sms_client:
+                    self.sms_client.send_message("⚠️ Test alert: simulated seizure risk (debug hotkey).")
                 elif self.pending_feedback:
                     if key == ord('y') or key == ord('Y'):
                         self._apply_feedback(correct=True)
                     elif key == ord('n') or key == ord('N'):
                         self._apply_feedback(correct=False)
             else:
+                if self._review_requested:
+                    self._review_requested = False
+                    self._auto_review_shown = True
+                    self._show_interim_review()
                 cv2.waitKey(1)
 
     def _apply_feedback(self, correct):
@@ -544,7 +618,7 @@ class FaceDetection:
                 if self.weights[wkey] != old:
                     print(f"  {wkey}: {old:.3f} → {self.weights[wkey]:.3f}")
 
-        save_weights(self.weights)
+        self._save_weights()
 
         self.feedback_events.append({'scores': dict(scores), 'correct': correct})
         self.pending_feedback = False
@@ -576,7 +650,7 @@ class FaceDetection:
                         for k, v in new_weights.items():
                             if k in self.weights:
                                 self.weights[k] = round(max(WEIGHT_MIN, min(WEIGHT_MAX, float(v))), 3)
-                        save_weights(self.weights)
+                        self._save_weights()
                         print(f"✅ Weights updated by Gemini for next session: {self.weights}")
                     except Exception as e:
                         print(f"Could not parse recalibration response: {e}")
@@ -594,9 +668,16 @@ class FaceDetection:
             on_weights_saved=self._on_weights_saved,
         )
 
+    def _save_weights(self):
+        if self.patient_id:
+            import account_store as _as
+            _as.save_weights(self.patient_id, self.weights)
+        else:
+            save_weights(self.weights)
+
     def _on_weights_saved(self, new_weights):
         self.weights.update(new_weights)
-        save_weights(self.weights)
+        self._save_weights()
         print(f"✅ Weights saved from review session: {self.weights}")
 
     def _start_epilepsy_protection(self):

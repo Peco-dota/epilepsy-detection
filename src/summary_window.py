@@ -250,7 +250,8 @@ class ChatWorker(QThread):
 
 class SummaryWindow:
     def show_summary(self, summary_text, ai_analysis=None, filepath=None,
-                     ai_client=None, current_weights=None, on_weights_saved=None):
+                     ai_client=None, current_weights=None, on_weights_saved=None,
+                     is_interim=False):
         app = QApplication.instance() or QApplication(sys.argv)
         window = SessionReviewWindow(
             summary_text=summary_text,
@@ -259,6 +260,7 @@ class SummaryWindow:
             ai_client=ai_client,
             current_weights=current_weights or {},
             on_weights_saved=on_weights_saved,
+            is_interim=is_interim,
         )
         window.show()
         app.exec()
@@ -266,7 +268,7 @@ class SummaryWindow:
 
 class SessionReviewWindow(QMainWindow):
     def __init__(self, summary_text, ai_analysis, filepath,
-                 ai_client, current_weights, on_weights_saved):
+                 ai_client, current_weights, on_weights_saved, is_interim=False):
         super().__init__()
         self.ai_client = ai_client
         self.current_weights = dict(current_weights)
@@ -275,7 +277,8 @@ class SessionReviewWindow(QMainWindow):
         self.chat_history = []
         self.pending_weights = None
 
-        self.setWindowTitle("EpiGuard — Session Review")
+        self.is_interim = is_interim
+        self.setWindowTitle("EpiGuard — Mid-session Review" if is_interim else "EpiGuard — Session Review")
         self.resize(1280, 820)
         self.setStyleSheet(STYLE)
         self._center()
@@ -343,7 +346,7 @@ class SessionReviewWindow(QMainWindow):
         header.setFixedHeight(60)
         h_row = QHBoxLayout(header)
         h_row.setContentsMargins(24, 0, 24, 0)
-        title = QLabel("📊  Session Review")
+        title = QLabel("⏱  Mid-session Review" if self.is_interim else "📊  Session Review")
         title.setFont(QFont("SF Pro Display", 17, QFont.Bold))
         title.setStyleSheet("color: #89b4fa;")
         h_row.addWidget(title)
@@ -373,6 +376,18 @@ class SessionReviewWindow(QMainWindow):
         h_row.addWidget(close_btn)
 
         main_layout.addWidget(header)
+
+        if self.is_interim:
+            pause_bar = QWidget()
+            pause_bar.setStyleSheet("background-color: #1e3a5f;")
+            pause_bar.setFixedHeight(32)
+            pb_layout = QHBoxLayout(pause_bar)
+            pb_layout.setContentsMargins(24, 0, 24, 0)
+            pb_lbl = QLabel("⏸  Monitoring is paused — close this window to resume")
+            pb_lbl.setStyleSheet("color: #89b4fa; font-size: 12px;")
+            pb_layout.addWidget(pb_lbl)
+            pb_layout.addStretch()
+            main_layout.addWidget(pause_bar)
 
         splitter = QSplitter(Qt.Horizontal)
         splitter.setHandleWidth(1)
