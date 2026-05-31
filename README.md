@@ -23,6 +23,9 @@ TELEPHONE_NUMBER="" # Phone number of sms receiver
 python3 ./src/main.py
 ```
 
+If you want to avoid API usage, leave `USE_AI = False` in [src/main.py](src/main.py).
+Set it to `True` only when you want AI features enabled.
+
 \
 You can adjust variable "debug" in main.py \
 True = without gui | False = with gui \

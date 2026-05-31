@@ -1,7 +1,10 @@
 from face_detection import FaceDetection
 from gpt_client import AIClient
 
-client = AIClient()
+# Set to True only when you want to use the API.
+USE_AI = True
+
+client = AIClient() if USE_AI else None
 twilio_client = None
 
 debug=True
@@ -27,6 +30,7 @@ face_detection.twitch_detector_module_init()
 face_detection.shake_detection_module_init()
 face_detection.face_drooping_model_init()
 face_detection.health_monitor_module_init()
+face_detection.audio_module_init()
 
 if config and config.get('context_multipliers'):
     face_detection.apply_context_multipliers(config['context_multipliers'])

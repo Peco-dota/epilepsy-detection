@@ -19,6 +19,7 @@ from csv_logger import CSVLogger
 from gpt_client import AIClient
 from summary_window import SummaryWindow
 from pre_ictal_detector import PreIctalDetector
+from audio_monitor import AudioMonitor
 
 WEIGHTS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'weights.json')
 
@@ -93,6 +94,7 @@ class FaceDetection:
         self.face_drooping_model = None
         self.health_monitor_module = None
         self.shake_detection_module = None
+        self.audio_monitor = None
         
         self.csv_logger = CSVLogger(output_dir="logs", log_interval=1.0)
         self.should_quit = False
@@ -108,6 +110,13 @@ class FaceDetection:
         self.shake = 0.0
         self.sms_sent = False
 
+        self.audio_rms = 0.0
+        self.audio_groan_count = 0
+        self.audio_warning = 0.0
+        self.audio_max_rms = 0.0
+        self.audio_triggered = False
+        self.audio_has_triggered = False
+
         self.weights = load_weights()
         print(f"📊 Loaded weights: {self.weights}")
 
@@ -120,39 +129,54 @@ class FaceDetection:
         self.feedback_events = []        # list of {scores, correct} for end-of-session LLM recalibration
 
     def _open_builtin_camera(self):
-        # Try to find the built-in FaceTime/webcam by name, skipping iPhone Continuity Camera
-        preferred_keywords = ['facetime', 'built-in', 'integrated', 'internal']
-        skip_keywords = ['iphone', 'ipad', 'continuity', 'droid']
+        platform = sys.platform
 
-        for index in range(6):
-            cap = cv2.VideoCapture(index, cv2.CAP_AVFOUNDATION)
-            if not cap.isOpened():
-                continue
-            # cv2 doesn't expose camera name directly on macOS, so use AVFoundation via subprocess
-            try:
-                import subprocess
-                result = subprocess.run(
-                    ['system_profiler', 'SPCameraDataType'],
-                    capture_output=True, text=True, timeout=3
-                )
-                lines = result.stdout.lower().split('\n')
-                # find camera names in order
-                camera_names = [l.strip().rstrip(':') for l in lines if l.strip().endswith(':') and 'camera' in l.lower()]
-                name = camera_names[index] if index < len(camera_names) else ''
-                if any(k in name for k in skip_keywords):
-                    cap.release()
+        if platform == "darwin":
+            # Try to find the built-in FaceTime/webcam by name, skipping Continuity Camera
+            preferred_keywords = ['facetime', 'built-in', 'integrated', 'internal']
+            skip_keywords = ['iphone', 'ipad', 'continuity', 'droid']
+
+            for index in range(6):
+                cap = cv2.VideoCapture(index, cv2.CAP_AVFOUNDATION)
+                if not cap.isOpened():
                     continue
-                if any(k in name for k in preferred_keywords) or name == '':
-                    print(f"Using camera index {index}: '{name or 'unknown'}'")
+                # cv2 doesn't expose camera name directly on macOS, so use AVFoundation via subprocess
+                try:
+                    result = subprocess.run(
+                        ['system_profiler', 'SPCameraDataType'],
+                        capture_output=True, text=True, timeout=3
+                    )
+                    lines = result.stdout.lower().split('\n')
+                    # find camera names in order
+                    camera_names = [l.strip().rstrip(':') for l in lines if l.strip().endswith(':') and 'camera' in l.lower()]
+                    name = camera_names[index] if index < len(camera_names) else ''
+                    if any(k in name for k in skip_keywords):
+                        cap.release()
+                        continue
+                    if any(k in name for k in preferred_keywords) or name == '':
+                        print(f"Using camera index {index}: '{name or 'unknown'}'")
+                        return cap
+                except Exception:
+                    # can't determine name — just use first available
+                    print(f"Using camera index {index}")
                     return cap
-            except Exception:
-                # can't determine name — just use first available
-                print(f"Using camera index {index}")
-                return cap
-            cap.release()
+                cap.release()
 
-        # fallback: just use index 0
-        return cv2.VideoCapture(0, cv2.CAP_AVFOUNDATION)
+            # fallback: just use index 0
+            return cv2.VideoCapture(0, cv2.CAP_AVFOUNDATION)
+
+        if platform.startswith("win"):
+            # Windows: DirectShow tends to be the most reliable
+            cap = cv2.VideoCapture(0, cv2.CAP_DSHOW)
+            if cap.isOpened():
+                return cap
+            return cv2.VideoCapture(0)
+
+        # Linux / WSL: try V4L2, then default
+        cap = cv2.VideoCapture(0, cv2.CAP_V4L2)
+        if cap.isOpened():
+            return cap
+        return cv2.VideoCapture(0)
 
     def apply_context_multipliers(self, multipliers):
         """
@@ -203,6 +227,8 @@ class FaceDetection:
         try:
             self._run_loop()
         finally:
+            if self.audio_monitor:
+                self.audio_monitor.stop()
             self.csv_logger.close()
             self._print_session_summary()
             self.cap.release()
@@ -335,6 +361,19 @@ class FaceDetection:
                 log_data['is_frozen'] = freeze_data.get('is_frozen', False)
                 freeze_status = "FROZEN" if freeze_data['is_frozen'] else "MOVING"
 
+            if self.audio_monitor:
+                audio_scores = self.audio_monitor.get_scores()
+                self.audio_rms = audio_scores.get('audio_rms', 0.0)
+                self.audio_groan_count = audio_scores.get('audio_groan_count', 0)
+                self.audio_warning = audio_scores.get('audio_warning', 0.0)
+                self.audio_max_rms = audio_scores.get('audio_max_rms', 0.0)
+                self.audio_triggered = audio_scores.get('audio_triggered', False)
+                self.audio_has_triggered = audio_scores.get('audio_has_triggered', False)
+
+                log_data['audio_rms'] = self.audio_rms
+                log_data['audio_groan_count'] = self.audio_groan_count
+                log_data['audio_warning'] = self.audio_warning
+
             w = self.weights
             if self.shake >= 0.95:
                 convulsive_risk = 1.0
@@ -402,6 +441,9 @@ class FaceDetection:
                     if health_data is not None and health_data['is_calibrated']:
                         cv2.putText(frame, f"Health Score: {health_data['health_score']:.2f} (BPM:{health_data['heart_rate']} Color:{health_data['color_score']:.2f})", (10, 240),
                             cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
+                    if self.audio_monitor:
+                        cv2.putText(frame, f"RMS:{self.audio_rms:.3f} Groans:{self.audio_groan_count} Warn:{self.audio_warning:.0f} Trigger:{self.audio_triggered} MAX:{self.audio_max_rms:.3f}", (10, 265),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.55, (0, 255, 0), 2)
 
                     # Display seizure risks prominently
                     # Color coding: Green (0-0.3), Yellow (0.3-0.6), Red (0.6-1.0)
@@ -600,6 +642,13 @@ class FaceDetection:
     
     def health_monitor_module_init(self):
         self.health_monitor_module = HealthMonitor()
+
+    def audio_module_init(self):
+        try:
+            self.audio_monitor = AudioMonitor()
+            self.audio_monitor.start()
+        except Exception as e:
+            print(f"Audio monitor disabled: {e}")
 
 def generate_black_frame(frame, data = None):
     h, w = frame.shape[:2]
