@@ -12,3 +12,4 @@ packaging
 openai
 python-dotenv
 twilio
+pynput

@@ -127,6 +127,45 @@ Use ✅ for calm findings, ⚠️ only for genuinely elevated values, 🔴 only 
 Always end with: "This is not a medical diagnosis — consult your doctor for clinical interpretation."
 """
 
+SURVEY_SYSTEM_PROMPT = """You are EpiGuard's setup assistant. A caregiver has answered a symptom survey about epileptic episodes. Questions use a 1-5 scale (1=Never, 5=Always) unless otherwise noted.
+
+Survey keys and what they mean:
+- unresponsive: patient unaware/unresponsive during episode (absence / focal dyscognitive)
+- postictal: prolonged confusion or exhaustion after episode (indicates generalized seizure)
+- aura: warning sensation before episode (pre-ictal state)
+- staring: blank staring / sudden halt in activity (absence seizure)
+- stiffening: sudden muscle rigidity (tonic phase)
+- clonic: rhythmic twitching / repetitive shaking (clonic phase)
+- myoclonic: sudden brief full-body jolts (myoclonic epilepsy)
+- atonic: sudden limpness / drop attacks (atonic seizure)
+- automatisms: lip smacking, hand rubbing, repetitive movements (focal seizure)
+- onesided: symptoms stronger on one side (focal onset, asymmetric)
+- eyes: eye rolling, deviation, or flutter
+- color: skin color change — pale, flushed, bluish lips (autonomic)
+- heartrate: fast or irregular heart rate during episodes (autonomic)
+- duration: 1=<5s, 2=5-30s, 3=30s-2min, 4=2-5min, 5=>5min
+- frequency: 1=<monthly, 2=monthly, 3=weekly, 4=daily, 5=multiple/day
+
+Signal weight mapping:
+- staring / unresponsive / automatisms → w_freeze high, w_blink_nc moderate
+- stiffening → w_shake moderate, w_twitch moderate
+- clonic → w_shake high, w_twitch high
+- myoclonic → w_twitch high, w_shake moderate
+- atonic → w_shake moderate, w_twitch moderate
+- onesided → w_asym high
+- eyes → w_blink high, w_blink_nc moderate
+- color → w_color high, w_bpm moderate, w_bpm_nc moderate
+- heartrate → w_bpm high, w_bpm_nc high
+- aura → w_bpm moderate, w_color moderate
+- postictal (generalized seizures) → slightly elevate all signals
+- high frequency / long duration → increase all weights proportionally
+
+Weight ranges: 0.05 (not relevant) → 0.80 (critically important)
+
+Respond with ONLY a valid JSON object with these exact keys:
+{"w_bpm": 0.10, "w_color": 0.10, "w_shake": 0.30, "w_twitch": 0.35, "w_blink": 0.30, "w_freeze": 0.40, "w_asym": 0.55, "w_blink_nc": 0.30, "w_bpm_nc": 0.10}"""
+
+
 class AIClient:
   def __init__(self):
     self.api_key = os.getenv("GEMINI_API_KEY")
@@ -175,6 +214,27 @@ class AIClient:
       ).choices[0].message.content)
     except Exception as e:
       print(f"Error during context assessment: {e}")
+      return None
+
+  def process_survey(self, answers: dict) -> str | None:
+    """
+    answers: {'staring': 3, 'shaking': 5, 'eyes': 1, 'drooping': 2, 'blinking': 4, 'color': 1}
+    Returns JSON string with weights, or None on failure.
+    """
+    labels = ['Never', 'Rarely', 'Sometimes', 'Often', 'Always']
+    lines = '\n'.join(
+        f"- {q}: {v}/5 ({labels[v-1]})" for q, v in answers.items()
+    )
+    messages = [
+      {"role": "system", "content": SURVEY_SYSTEM_PROMPT},
+      {"role": "user", "content": f"Survey answers:\n{lines}"}
+    ]
+    try:
+      return _call_with_retry(lambda: self.client.chat.completions.create(
+        model=GEMINI_MODEL, messages=messages
+      ).choices[0].message.content)
+    except Exception as e:
+      print(f"Error processing survey: {e}")
       return None
 
   def recalibrate_weights(self, current_weights, feedback_events):
