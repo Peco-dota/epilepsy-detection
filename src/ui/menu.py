@@ -237,6 +237,40 @@ class EpiGuardMenu(QMainWindow):
         )
         self.context_textbox.setFixedHeight(60)
         layout.addWidget(self.context_textbox)
+        layout.addSpacing(16)
+
+        # Audio monitoring toggle
+        self._audio_enabled = False
+        audio_row = QHBoxLayout()
+        audio_row.setSpacing(12)
+        self._audio_btn = QPushButton("Enable audio monitoring")
+        self._audio_btn.setCheckable(True)
+        self._audio_btn.setFocusPolicy(Qt.NoFocus)
+        self._audio_btn.setCursor(Qt.PointingHandCursor)
+        self._audio_btn.setFixedHeight(40)
+        self._audio_btn.setStyleSheet(f"""
+            QPushButton {{
+                background: {CARD}; color: {MUTED};
+                border: 1.5px solid rgba(177,173,161,0.6);
+                border-radius: 8px; padding: 0 16px;
+                font-size: 13px; font-weight: 600;
+            }}
+            QPushButton:checked {{
+                background: {ACCENT}; color: #ffffff;
+                border-color: {ACCENT};
+            }}
+        """)
+        audio_hint = QLabel("Detects groans and unusual sounds during a seizure")
+        audio_hint.setStyleSheet(f"color: {MUTED}; font-size: 11px;")
+        audio_hint.setAlignment(Qt.AlignVCenter)
+
+        def _toggle_audio(checked):
+            self._audio_enabled = checked
+        self._audio_btn.toggled.connect(_toggle_audio)
+
+        audio_row.addWidget(self._audio_btn)
+        audio_row.addWidget(audio_hint, stretch=1)
+        layout.addLayout(audio_row)
 
         layout.addStretch()
         layout.addSpacing(14)
@@ -322,7 +356,12 @@ class EpiGuardMenu(QMainWindow):
                 self._show_screen_1()
 
     def _checkin_submit_empty(self):
-        self.result = {'context_multipliers': {}, 'context_summary': ''}
+        self.result = {
+            'context_multipliers': {},
+            'context_summary': '',
+            'audio_enabled': getattr(self, '_audio_enabled', False),
+            'screen_protection_enabled': getattr(self, '_screen_protection_enabled', True),
+        }
         self.done.emit(self.result)
         self.close()
 
@@ -346,6 +385,8 @@ class EpiGuardMenu(QMainWindow):
             self.result = {
                 'context_multipliers': self.context_multipliers,
                 'context_summary': self.context_summary,
+                'audio_enabled': getattr(self, '_audio_enabled', False),
+                'screen_protection_enabled': getattr(self, '_screen_protection_enabled', True),
             }
             self.done.emit(self.result)
             self.close()

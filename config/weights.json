@@ -7,5 +7,6 @@
   "w_freeze": 0.6,
   "w_asym": 0.7,
   "w_blink_nc": 0.45,
-  "w_bpm_nc": 0.25
+  "w_bpm_nc": 0.25,
+  "w_audio": 0.25
 }

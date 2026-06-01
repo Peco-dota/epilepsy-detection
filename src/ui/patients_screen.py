@@ -12,7 +12,7 @@ from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QLabel, QLineEdit, QPushButton, QScrollArea, QFrame,
     QGraphicsOpacityEffect, QDialog, QFileDialog, QGridLayout,
-    QButtonGroup, QSizePolicy, QStackedWidget,
+    QButtonGroup, QSizePolicy, QStackedWidget, QCheckBox,
 )
 from PySide6.QtCore import Qt, QPropertyAnimation, QEasingCurve, Signal, QTimer
 from PySide6.QtGui import QFont, QPixmap, QPainter, QPainterPath, QColor
@@ -460,52 +460,91 @@ class _AvatarEditDialog(QDialog):
 
 
 class _CheckinPromptDialog(QDialog):
-    def __init__(self, patient_name, parent=None):
+    def __init__(self, patient_name, last_config: dict, parent=None):
         super().__init__(parent)
         self.setWindowTitle('Start Monitoring')
-        self.setFixedSize(440, 220)
+        self.setFixedSize(440, 310)
         self.setStyleSheet(STYLE)
         self.setModal(True)
         self.result_action = None
+        # Start with whatever settings were used last time
+        self._audio_enabled = bool(last_config.get('audio_enabled', False))
+        self._screen_protection_enabled = bool(last_config.get('screen_protection_enabled', True))
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(28, 24, 28, 20)
+        layout.setSpacing(0)
 
         title = QLabel(f"Start monitoring {patient_name}?")
         title.setFont(QFont('', 16, QFont.Bold))
         layout.addWidget(title)
+        layout.addSpacing(4)
 
-        sub = QLabel("You have already completed the daily survey today.")
+        sub = QLabel("You've already done the daily check-in today.")
         sub.setFont(QFont('', 12))
         sub.setStyleSheet(f'color: {MUTED};')
         layout.addWidget(sub)
-        layout.addSpacing(16)
+        layout.addSpacing(18)
 
-        btn_row = QHBoxLayout()
-        btn_row.setSpacing(10)
-        
+        # Audio checkbox — no custom indicator CSS so macOS renders the native checkmark
+        self._audio_check = QCheckBox("Enable audio monitoring")
+        self._audio_check.setChecked(self._audio_enabled)
+        self._audio_check.setStyleSheet(
+            f"QCheckBox {{ color: {TEXT}; font-size: 13px; border: none;"
+            f" background: transparent; spacing: 8px; }}"
+        )
+        self._audio_check.toggled.connect(lambda v: setattr(self, '_audio_enabled', v))
+        layout.addWidget(self._audio_check)
+        audio_hint = QLabel("Detects groans and unusual sounds during a seizure")
+        audio_hint.setStyleSheet(
+            f"color: {MUTED}; font-size: 11px; border: none;"
+            f" background: transparent; padding-left: 24px;"
+        )
+        layout.addWidget(audio_hint)
+        layout.addSpacing(10)
+
+        # Screen protection checkbox
+        self._screen_check = QCheckBox("Enable screen flash protection")
+        self._screen_check.setChecked(self._screen_protection_enabled)
+        self._screen_check.setStyleSheet(
+            f"QCheckBox {{ color: {TEXT}; font-size: 13px; border: none;"
+            f" background: transparent; spacing: 8px; }}"
+        )
+        self._screen_check.toggled.connect(lambda v: setattr(self, '_screen_protection_enabled', v))
+        layout.addWidget(self._screen_check)
+        screen_hint = QLabel("Monitors screen for epileptic flash patterns and hides offending apps")
+        screen_hint.setStyleSheet(
+            f"color: {MUTED}; font-size: 11px; border: none;"
+            f" background: transparent; padding-left: 24px;"
+        )
+        layout.addWidget(screen_hint)
+        layout.addSpacing(18)
+
+        # Secondary actions row
+        sec_row = QHBoxLayout()
+        sec_row.setSpacing(10)
         cancel_btn = QPushButton('Cancel')
         cancel_btn.setObjectName('dialog_cancel')
         cancel_btn.clicked.connect(self.reject)
-        
-        retake_btn = QPushButton('Retake Survey')
+        retake_btn = QPushButton('Retake Check-in')
         retake_btn.setObjectName('dialog_secondary')
         retake_btn.clicked.connect(self._retake)
-        
+        sec_row.addWidget(cancel_btn)
+        sec_row.addWidget(retake_btn)
+        layout.addLayout(sec_row)
+        layout.addSpacing(8)
+
+        # Primary action — full width so it never gets clipped
         start_btn = QPushButton('Start Monitoring')
         start_btn.setObjectName('dialog_primary')
+        start_btn.setFixedHeight(44)
         start_btn.clicked.connect(self._start)
-        
-        btn_row.addWidget(cancel_btn)
-        btn_row.addWidget(retake_btn)
-        btn_row.addWidget(start_btn)
-        
-        layout.addLayout(btn_row)
-        
+        layout.addWidget(start_btn)
+
     def _retake(self):
         self.result_action = 'retake'
         self.accept()
-        
+
     def _start(self):
         self.result_action = 'start'
         self.accept()
@@ -701,6 +740,9 @@ class PatientsScreen(QMainWindow):
         self._refresh()
 
     def _refresh(self):
+        # Remember if settings page was open so we can restore it after rebuild
+        _stay_in_settings = hasattr(self, '_stack') and self._stack.currentIndex() == 1
+
         # Rebind module-level colour constants from current theme so all
         # f-strings below and in helper methods pick up the right values.
         from ui import theme as _t
@@ -769,6 +811,9 @@ class PatientsScreen(QMainWindow):
         anim.setEndValue(1.0)
         anim.setEasingCurve(QEasingCurve.OutQuart)
         anim.start()
+
+        if _stay_in_settings:
+            self._toggle_settings()
 
     # ── Page builders ─────────────────────────────────────────────────────────
 
@@ -852,14 +897,20 @@ class PatientsScreen(QMainWindow):
 
         def _card():
             f = QFrame()
+            f.setObjectName('settings_card')
+            # Use ID selector so the border only applies to this frame,
+            # not to child QLabels (which inherit from QFrame in Qt).
             f.setStyleSheet(
-                f"QFrame {{ background: {CARD}; border-radius: 14px; border: 1px solid {BORDER}; }}"
+                f"QFrame#settings_card {{ background: {CARD}; border-radius: 14px;"
+                f" border: 1px solid {BORDER}; }}"
+                f"QFrame#settings_card QLabel {{ border: none; background: transparent; }}"
+                f"QFrame#settings_card QWidget {{ background: transparent; }}"
             )
             return f
 
         def _card_title(t):
             l = QLabel(t); l.setFont(QFont('', 13, QFont.Bold))
-            l.setStyleSheet(f"color: {TEXT}; background: transparent;"); return l
+            l.setStyleSheet(f"color: {TEXT};"); return l
 
         def _field(placeholder, password=False):
             f = QLineEdit(); f.setPlaceholderText(placeholder); f.setFixedHeight(44)
@@ -874,7 +925,7 @@ class PatientsScreen(QMainWindow):
         def _msg():
             l = QLabel(''); l.setFont(QFont('', 11))
             l.setWordWrap(True); l.setFixedHeight(16)
-            l.setStyleSheet("background: transparent;"); return l
+            l.setStyleSheet("background: transparent; border: none;"); return l
 
         def _show(lbl, text, ok):
             lbl.setText(text)
@@ -1016,17 +1067,19 @@ class PatientsScreen(QMainWindow):
         theme_row = QHBoxLayout(); theme_row.setSpacing(8)
         light_btn = QPushButton('Light'); light_btn.setCheckable(True)
         dark_btn  = QPushButton('Dark');  dark_btn.setCheckable(True)
+        _unsel_bg = 'rgba(60,55,50,0.4)' if IS_DARK else 'rgba(177,173,161,0.18)'
         for b in (light_btn, dark_btn):
             b.setFocusPolicy(Qt.NoFocus); b.setCursor(Qt.PointingHandCursor)
             b.setFixedHeight(36)
             b.setStyleSheet(
-                f"QPushButton {{ background: {'rgba(60,55,50,0.4)' if IS_DARK else 'rgba(177,173,161,0.18)'};"
-                f" color: {MUTED}; border: 1.5px solid {BORDER}; border-radius: 8px;"
-                " padding: 0 20px; font-weight: 600; }"
-                f"QPushButton:checked {{ background: {ACCENT}; color: #ffffff; border-color: {ACCENT}; }}"
+                f"QPushButton {{ background: {_unsel_bg}; color: {MUTED}; border: none;"
+                f" border-radius: 8px; padding: 0 20px; font-weight: 600; }}"
+                f"QPushButton:checked {{ background: {ACCENT}; color: #ffffff; }}"
+                f"QPushButton:hover:!checked {{ background: rgba(193,95,60,0.12); color: {TEXT}; }}"
             )
         (dark_btn if IS_DARK else light_btn).setChecked(True)
-        theme_msg = QLabel(''); theme_msg.setStyleSheet(f'color: {MUTED}; font-size: 11px;')
+        theme_msg = QLabel('')
+        theme_msg.setStyleSheet(f'color: {MUTED}; font-size: 11px; border: none; background: transparent;')
         def _set_theme(name):
             from ui import theme as _t
             _t.set_active(name)  # updates theme module vars in-process
@@ -1037,6 +1090,33 @@ class PatientsScreen(QMainWindow):
         theme_row.addWidget(light_btn); theme_row.addWidget(dark_btn); theme_row.addStretch()
         acl.addLayout(theme_row); acl.addWidget(theme_msg)
         bl.addWidget(ac)
+
+        # ── DEVELOPER section ─────────────────────────────────────────────────
+        bl.addWidget(_section('Developer'))
+
+        dc = _card(); dcl = QVBoxLayout(dc)
+        dcl.setContentsMargins(20, 18, 20, 20); dcl.setSpacing(10)
+        dcl.addWidget(_card_title('Debug Monitoring Overlay'))
+        debug_check = QCheckBox("Show all detection metrics during monitoring")
+        from ui.theme import get_debug_overlay
+        debug_check.setChecked(get_debug_overlay())
+        debug_check.setStyleSheet(
+            f"QCheckBox {{ color: {TEXT}; font-size: 13px; border: none;"
+            f" background: transparent; spacing: 8px; }}"
+        )
+        debug_hint = QLabel(
+            "Displays live scores for every detector, audio levels, risk scores "
+            "and weights as an overlay on the camera feed."
+        )
+        debug_hint.setWordWrap(True)
+        debug_hint.setStyleSheet(f"color: {MUTED}; font-size: 11px; border: none; background: transparent;")
+        def _toggle_debug(checked):
+            from ui import theme as _t
+            _t.save_debug_overlay(checked)
+        debug_check.toggled.connect(_toggle_debug)
+        dcl.addWidget(debug_check)
+        dcl.addWidget(debug_hint)
+        bl.addWidget(dc)
 
         # ── Sign out ──────────────────────────────────────────────────────────
         bl.addSpacing(8)
@@ -1126,11 +1206,15 @@ class PatientsScreen(QMainWindow):
         last_survey = p.get('last_daily_survey_date')
         
         if last_survey == today:
-            prompt = _CheckinPromptDialog(p.get('name', ''), self)
+            cached_config = p.get('last_daily_survey_config', {})
+            prompt = _CheckinPromptDialog(p.get('name', ''), cached_config, self)
             if prompt.exec() == QDialog.Accepted:
                 if prompt.result_action == 'start':
-                    # Directly start monitoring using the cached last config
-                    self.result = {'patient': p, 'config': p.get('last_daily_survey_config', {})}
+                    # Use cached config but override audio with whatever the user just toggled
+                    config = dict(cached_config)
+                    config['audio_enabled'] = prompt._audio_enabled
+                    config['screen_protection_enabled'] = prompt._screen_protection_enabled
+                    self.result = {'patient': p, 'config': config}
                     self.close()
                     return
                 elif prompt.result_action == 'retake':

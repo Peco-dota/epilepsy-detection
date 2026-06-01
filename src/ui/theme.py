@@ -37,15 +37,7 @@ def _load_name() -> str:
 
 
 def save_name(name: str):
-    SETTINGS_FILE.parent.mkdir(parents=True, exist_ok=True)
-    try:
-        with open(SETTINGS_FILE) as f:
-            data = json.load(f)
-    except Exception:
-        data = {}
-    data['theme'] = name
-    with open(SETTINGS_FILE, 'w') as f:
-        json.dump(data, f, indent=2)
+    _save_setting('theme', name)
 
 
 def get_name() -> str:
@@ -66,8 +58,37 @@ def set_active(name: str):
     save_name(name)
 
 
+def _load_settings() -> dict:
+    try:
+        with open(SETTINGS_FILE) as f:
+            return json.load(f)
+    except Exception:
+        return {}
+
+
+def _save_setting(key: str, value):
+    SETTINGS_FILE.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        with open(SETTINGS_FILE) as f:
+            data = json.load(f)
+    except Exception:
+        data = {}
+    data[key] = value
+    with open(SETTINGS_FILE, 'w') as f:
+        json.dump(data, f, indent=2)
+
+
+def get_debug_overlay() -> bool:
+    return bool(_load_settings().get('debug_overlay', False))
+
+
+def save_debug_overlay(enabled: bool):
+    _save_setting('debug_overlay', enabled)
+
+
 NAME = _load_name()
 _p = _DARK if NAME == 'dark' else _LIGHT
+DEBUG_OVERLAY = get_debug_overlay()
 
 BG       = _p['BG']
 SURFACE  = _p['SURFACE']

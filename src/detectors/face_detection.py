@@ -34,6 +34,7 @@ DEFAULT_WEIGHTS = {
     'w_asym':     0.55,
     'w_blink_nc': 0.30,
     'w_bpm_nc':   0.10,
+    'w_audio':    0.25,
 }
 
 WEIGHT_MIN = 0.05
@@ -63,11 +64,14 @@ def save_weights(weights):
         print(f"Could not save weights: {e}")
 
 class FaceDetection:
-    def __init__(self, debug=False, solo_video=True, ai_client=None, sms_client=None, patient_id=None):
+    def __init__(self, debug=False, solo_video=True, ai_client=None, sms_client=None,
+                 patient_id=None, debug_overlay=False, screen_protection=True):
         self.frame_index = 0
         self.frame_reset = 150
         self.debug = debug
         self.solo_video = solo_video
+        self.debug_overlay = debug_overlay
+        self.screen_protection = screen_protection
         self.black_frame = None
         self.epilepsy_process = None
         self.ai_client = ai_client
@@ -246,19 +250,103 @@ class FaceDetection:
         finally:
             termios.tcsetattr(sys.stdin, termios.TCSADRAIN, old_settings)
 
+    def _draw_debug_overlay(self, frame, conv_risk, nc_risk, pi, audio_score, log_data):
+        """Draw a semi-transparent metrics panel on the right side of the frame."""
+        import numpy as np
+        h, w = frame.shape[:2]
+        panel_w = 310
+        x0 = w - panel_w - 8
+        y0 = 8
+
+        # rows: (label, value, colour)
+        def _risk_col(v):
+            return (0, 200, 80) if v < 0.3 else ((0, 200, 220) if v < 0.6 else (60, 60, 255))
+
+        rows = [
+            ("── DETECTION SCORES ──", "", (180, 180, 180)),
+            ("  Shake",    f"{self.shake:.3f}",  _risk_col(self.shake)),
+            ("  Blink",    f"{self.blink:.3f}",  _risk_col(self.blink)),
+            ("  Eye",      f"{self.eye:.3f}",    _risk_col(self.eye)),
+            ("  Freeze",   f"{self.freeze:.3f}", _risk_col(self.freeze)),
+            ("  Asymmetry",f"{self.asym:.3f}",   _risk_col(self.asym)),
+            ("  Twitch",   f"{self.twitch:.3f}", _risk_col(self.twitch)),
+            ("  Color",    f"{self.color:.3f}",  _risk_col(self.color)),
+            ("  BPM score",f"{self.bpm:.3f}",    _risk_col(self.bpm)),
+            ("── AUDIO ──", "", (180, 180, 180)),
+            ("  Score",    f"{audio_score:.3f}",                         _risk_col(audio_score)),
+            ("  RMS",      f"{log_data.get('audio_rms', 0.0):.4f}",     (160, 160, 160)),
+            ("  Groans",   f"{log_data.get('audio_groan_count', 0)}",    (160, 160, 160)),
+            ("── RISK ──", "", (180, 180, 180)),
+            ("  Convulsive",    f"{conv_risk:.3f}", _risk_col(conv_risk)),
+            ("  Non-conv",      f"{nc_risk:.3f}",   _risk_col(nc_risk)),
+            ("── PRE-ICTAL ──", "", (180, 180, 180)),
+            ("  Score", f"{pi['pre_ictal_score']:.3f}", _risk_col(pi['pre_ictal_score'])),
+            ("  Stage", pi.get('stage_label', '?'),    (200, 200, 200)),
+            ("── WEIGHTS ──", "", (180, 180, 180)),
+        ]
+        for k, v in self.weights.items():
+            rows.append((f"  {k}", f"{v:.2f}", (160, 160, 160)))
+
+        line_h = 18
+        pad = 8
+        panel_h = len(rows) * line_h + pad * 2
+
+        # semi-transparent dark background
+        overlay = frame.copy()
+        cv2.rectangle(overlay, (x0 - pad, y0), (x0 + panel_w, y0 + panel_h), (15, 15, 15), -1)
+        cv2.addWeighted(overlay, 0.72, frame, 0.28, 0, frame)
+
+        font = cv2.FONT_HERSHEY_SIMPLEX
+        for i, (label, value, colour) in enumerate(rows):
+            y = y0 + pad + i * line_h + line_h - 4
+            cv2.putText(frame, label, (x0, y), font, 0.38, colour, 1, cv2.LINE_AA)
+            if value:
+                (vw, _), _ = cv2.getTextSize(value, font, 0.38, 1)
+                cv2.putText(frame, value, (x0 + panel_w - vw - 4, y), font, 0.38, colour, 1, cv2.LINE_AA)
+
+    def audio_module_init(self):
+        try:
+            import sys as _sys, os as _os
+            _sys.path.insert(0, _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))))
+            from audio_monitor import AudioMonitor
+            from ui.audio_calibration import run_audio_calibration
+            self.audio_monitor = AudioMonitor()
+            # Calibrate ambient noise before starting — sets adaptive thresholds
+            run_audio_calibration(self.audio_monitor)
+            self.audio_monitor.start()
+            print("🎤 Audio monitoring started")
+        except Exception as e:
+            self.audio_monitor = None
+            print(f"⚠️  Audio monitoring unavailable: {e}")
+
     def stop_monitoring(self):
         self.should_quit = True
 
     def start(self):
         try:
             from ui.monitoring_status import MonitoringStatusWindow
-            self.status_window = MonitoringStatusWindow(self.patient_name, on_stop=self.stop_monitoring)
+            self.status_window = MonitoringStatusWindow(
+                self.patient_name,
+                on_stop=self.stop_monitoring,
+                on_feedback=self._apply_feedback,
+            )
             self.status_window.show()
         except Exception as e:
             print("Could not launch status window", e)
             self.status_window = None
+        self._pi_warning_shown = False
 
-        if not self.debug:
+        self.dashboard = None
+        if self.debug_overlay:
+            try:
+                from ui.debug_window import MonitoringDashboard
+                self.dashboard = MonitoringDashboard()
+                self.dashboard.show()
+            except Exception as e:
+                print("Could not launch monitoring dashboard", e)
+                self.dashboard = None
+
+        if not self.debug and self.screen_protection:
             self._start_epilepsy_protection()
 
         self.keyboard_thread = threading.Thread(target=self._keyboard_listener, daemon=True)
@@ -272,11 +360,15 @@ class FaceDetection:
         finally:
             if hasattr(self, 'status_window') and self.status_window:
                 self.status_window.close()
+            if hasattr(self, 'dashboard') and self.dashboard:
+                self.dashboard.close()
+            if hasattr(self, 'audio_monitor') and self.audio_monitor:
+                self.audio_monitor.stop()
             self.csv_logger.close()
             self._print_session_summary()
             self.cap.release()
             cv2.destroyAllWindows()
-            if not self.debug:
+            if not self.debug and self.screen_protection:
                 self._stop_epilepsy_protection()
 
     def _run_loop(self):
@@ -406,13 +498,26 @@ class FaceDetection:
                 log_data['is_frozen'] = freeze_data.get('is_frozen', False)
                 freeze_status = "FROZEN" if freeze_data['is_frozen'] else "MOVING"
 
+            # Audio score (0–1): normalised groan count within the warning window
+            audio_score = 0.0
+            if hasattr(self, 'audio_monitor') and self.audio_monitor:
+                a = self.audio_monitor.get_scores()
+                audio_score = min(a['audio_groan_count'] / 4.0, 1.0)
+                log_data['audio_rms']         = round(a['audio_rms'], 4)
+                log_data['audio_groan_count'] = a['audio_groan_count']
+
             w = self.weights
             if self.shake >= 0.95:
                 convulsive_risk = 1.0
             else:
-                convulsive_risk = w['w_bpm']*self.bpm + self.shake*w['w_shake'] + self.blink*w['w_blink'] + self.color*w['w_color']
+                convulsive_risk = (w['w_bpm']*self.bpm + self.shake*w['w_shake']
+                                   + self.blink*w['w_blink'] + self.color*w['w_color']
+                                   + audio_score*w.get('w_audio', 0.25))
 
-            x_non_convulsive = self.asym*w['w_asym'] + self.freeze*w['w_freeze'] + self.blink*w['w_blink_nc'] + self.bpm*w['w_bpm_nc'] + self.color*w['w_color'] + self.twitch*w['w_twitch']
+            x_non_convulsive = (self.asym*w['w_asym'] + self.freeze*w['w_freeze']
+                                + self.blink*w['w_blink_nc'] + self.bpm*w['w_bpm_nc']
+                                + self.color*w['w_color'] + self.twitch*w['w_twitch']
+                                + audio_score*w.get('w_audio', 0.25))
 
             # ── Pre-ictal temporal analysis ───────────────────────────────
             pi = self.pre_ictal.update(
@@ -435,6 +540,16 @@ class FaceDetection:
                     'color': self.color, 'asym': self.asym, 'freeze': self.freeze,
                     'twitch': self.twitch, 'eye': self.eye,
                 }
+                if self.status_window:
+                    self.status_window.show_alert(alert_type, self.sms_sent)
+
+            if self.status_window:
+                if pi['warning'] and not self._pi_warning_shown:
+                    self.status_window.show_pre_ictal_warning(pi.get('stage_label', '—'))
+                    self._pi_warning_shown = True
+                elif not pi['warning'] and self._pi_warning_shown:
+                    self.status_window.clear_pre_ictal_warning()
+                    self._pi_warning_shown = False
 
             if self.frame_index % 150 == 0:
                 if self.face_freeze_modul:
@@ -443,6 +558,41 @@ class FaceDetection:
             if self.csv_logger.should_log():
                 self.csv_logger.log_row(log_data)
 
+            if self.debug_overlay:
+                if self.dashboard:
+                    self.dashboard.update_metrics({
+                        'shake': self.shake,
+                        'blink': self.blink,
+                        'eye': self.eye,
+                        'freeze': self.freeze,
+                        'asym': self.asym,
+                        'twitch': self.twitch,
+                        'color': self.color,
+                        'bpm': self.bpm,
+                        'conv_risk': convulsive_risk,
+                        'nc_risk': x_non_convulsive,
+                        'pi_score': pi['pre_ictal_score'],
+                        'pi_stage': pi.get('stage_label', '—'),
+                        'audio_score': audio_score,
+                        'audio_rms': log_data.get('audio_rms', 0.0),
+                        'audio_groans': log_data.get('audio_groan_count', 0),
+                        'weights': self.weights,
+                        'sms_configured': self.sms_client is not None,
+                        'sms_sent': self.sms_sent,
+                        'alert_pending': self.pending_feedback,
+                        'alert_type': ('convulsive' if convulsive_risk >= 1.0 else
+                                       'non-convulsive' if x_non_convulsive >= 1.0 else None),
+                    })
+                    _locs = locals()
+                    self.dashboard.update_frames({
+                        'freeze':   _locs.get('frame_freeze'),
+                        'eye':      _locs.get('frame_eye'),
+                        'blink':    _locs.get('frame_blinked'),
+                        'twitch':   _locs.get('frame_twitch'),
+                        'shake':    _locs.get('frame_shake'),
+                        'drooping': _locs.get('drooping_frame'),
+                        'health':   _locs.get('frame_health'),
+                    })
             if self.debug:
                 if self.solo_video:
                     # Show freeze state prominently
@@ -555,12 +705,12 @@ class FaceDetection:
             if self.frame_index > self.frame_reset:
                 self.frame_index = 1
 
+            # Pump Qt events every frame so status/debug windows stay responsive
+            _app = QApplication.instance()
+            if _app:
+                _app.processEvents()
+
             if self.debug:
-                
-                # Pump Qt events to prevent macOS beachball/freeze
-                app = QApplication.instance()
-                if app:
-                    app.processEvents()
 
                 key = cv2.waitKey(5) & 0xFF
                 if key == ord('q'):
@@ -612,6 +762,7 @@ class FaceDetection:
         self.pending_feedback = False
         self.alert_scores_snapshot = {}
         self.sms_sent = False  # allow future alerts
+        self._pi_warning_shown = False  # allow pre-ictal warning to re-trigger
 
     def _print_session_summary(self):
         print("\n" + "="*60)

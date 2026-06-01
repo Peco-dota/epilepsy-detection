@@ -1,3 +1,4 @@
 {
-  "theme": "light"
+  "theme": "light",
+  "debug_overlay": true
 }
