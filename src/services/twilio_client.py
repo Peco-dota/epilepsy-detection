@@ -20,9 +20,17 @@ class TwilioClient:
         self.to_number = _format_whatsapp_number(os.getenv('TELEPHONE_NUMBER'))
         self.client = Client(self.account_sid, self.auth_token)
 
-    def send_message(self, message):
-        self.client.messages.create(
-            from_=self.from_number,
-            to=self.to_number,
-            body=message
-        )
+    def send_message(self, message: str, extra_phones: list | None = None):
+        """Send to the default number plus any extra_phones."""
+        targets = []
+        if self.to_number:
+            targets.append(self.to_number)
+        for phone in (extra_phones or []):
+            formatted = _format_whatsapp_number(phone)
+            if formatted and formatted not in targets:
+                targets.append(formatted)
+        for to in targets:
+            try:
+                self.client.messages.create(from_=self.from_number, to=to, body=message)
+            except Exception as e:
+                print(f"WhatsApp send failed to {to}: {e}")

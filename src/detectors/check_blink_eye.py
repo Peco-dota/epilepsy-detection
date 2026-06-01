@@ -1,5 +1,5 @@
 import time
-from mediapipe_indexes import LEFT_EYE_IDXS, RIGHT_EYE_IDXS
+from core.mediapipe_indexes import LEFT_EYE_IDXS, RIGHT_EYE_IDXS
 import cv2
 
 # returns True if user blinks at least "blink_count_threshold" times in "blink_time_threshold" seconds

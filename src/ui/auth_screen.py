@@ -7,24 +7,18 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt, QPropertyAnimation, QEasingCurve
 from PySide6.QtGui import QFont
 
-import account_store
-
-BG      = '#f4f3ee'
-TEXT    = '#1c1917'
-MUTED   = '#8a847a'
-ACCENT  = '#c15f3c'
-ACCENT2 = '#d4724e'
-DANGER  = '#b91c1c'
+from core import account_store
+from ui.theme import BG, TEXT, MUTED, ACCENT, ACCENT2, DANGER, INPUT_BG
 
 STYLE = f"""
 QMainWindow, QWidget {{
     background-color: {BG};
     color: {TEXT};
-    font-family: -apple-system, 'SF Pro Text', 'Inter', 'Segoe UI', sans-serif;
+    font-family: 'SF Pro Text', 'Inter', 'Segoe UI', sans-serif;
 }}
 QLabel {{ background: transparent; color: {TEXT}; }}
 QLineEdit {{
-    background-color: #ffffff;
+    background-color: {INPUT_BG};
     color: {TEXT};
     border: 1px solid rgba(177,173,161,0.55);
     border-radius: 12px;
@@ -34,7 +28,7 @@ QLineEdit {{
 }}
 QLineEdit:focus {{
     border-color: {ACCENT};
-    background-color: rgba(193,95,60,0.04);
+    background-color: {INPUT_BG};
 }}
 QPushButton#primary {{
     background: qlineargradient(x1:0,y1:0,x2:1,y2:0,stop:0 {ACCENT},stop:1 {ACCENT2});
@@ -82,7 +76,7 @@ class AuthScreen(QMainWindow):
         layout.addStretch(1)
 
         logo = QLabel('🛡️')
-        logo.setFont(QFont('-apple-system', 48))
+        logo.setFont(QFont('', 48))
         logo.setAlignment(Qt.AlignCenter)
         logo.setStyleSheet('background: transparent;')
         logo.setFixedHeight(64)
@@ -90,7 +84,7 @@ class AuthScreen(QMainWindow):
         layout.addSpacing(12)
 
         title = QLabel('EpiGuard')
-        title.setFont(QFont('-apple-system', 28, QFont.Bold))
+        title.setFont(QFont('', 28, QFont.Bold))
         title.setAlignment(Qt.AlignCenter)
         title.setStyleSheet(f'background: transparent; color: {TEXT};')
         layout.addWidget(title)
@@ -98,7 +92,7 @@ class AuthScreen(QMainWindow):
 
         subtitle_text = 'Sign in to continue' if self._mode == 'login' else 'Create your account'
         subtitle = QLabel(subtitle_text)
-        subtitle.setFont(QFont('-apple-system', 13))
+        subtitle.setFont(QFont('', 13))
         subtitle.setAlignment(Qt.AlignCenter)
         subtitle.setStyleSheet(f'background: transparent; color: {MUTED};')
         layout.addWidget(subtitle)
@@ -106,7 +100,7 @@ class AuthScreen(QMainWindow):
 
         # Email
         lbl = QLabel('EMAIL')
-        lbl.setFont(QFont('-apple-system', 11))
+        lbl.setFont(QFont('', 11))
         lbl.setStyleSheet(f'color: {MUTED}; letter-spacing: 0.5px;')
         layout.addWidget(lbl)
         layout.addSpacing(6)
@@ -118,7 +112,7 @@ class AuthScreen(QMainWindow):
 
         # Password
         lbl2 = QLabel('PASSWORD')
-        lbl2.setFont(QFont('-apple-system', 11))
+        lbl2.setFont(QFont('', 11))
         lbl2.setStyleSheet(f'color: {MUTED}; letter-spacing: 0.5px;')
         layout.addWidget(lbl2)
         layout.addSpacing(6)
@@ -133,7 +127,7 @@ class AuthScreen(QMainWindow):
         if self._mode == 'register':
             layout.addSpacing(14)
             lbl3 = QLabel('CONFIRM PASSWORD')
-            lbl3.setFont(QFont('-apple-system', 11))
+            lbl3.setFont(QFont('', 11))
             lbl3.setStyleSheet(f'color: {MUTED}; letter-spacing: 0.5px;')
             layout.addWidget(lbl3)
             layout.addSpacing(6)
@@ -146,7 +140,7 @@ class AuthScreen(QMainWindow):
 
         layout.addSpacing(6)
         self._error = QLabel('')
-        self._error.setFont(QFont('-apple-system', 12))
+        self._error.setFont(QFont('', 12))
         self._error.setStyleSheet(f'color: {DANGER};')
         self._error.setAlignment(Qt.AlignCenter)
         self._error.setWordWrap(True)
@@ -166,7 +160,7 @@ class AuthScreen(QMainWindow):
         toggle_row.setAlignment(Qt.AlignCenter)
         hint_text = "Don't have an account?" if self._mode == 'login' else 'Already have an account?'
         toggle_lbl = QLabel(hint_text)
-        toggle_lbl.setFont(QFont('-apple-system', 13))
+        toggle_lbl.setFont(QFont('', 13))
         toggle_lbl.setStyleSheet(f'color: {MUTED};')
         toggle_row.addWidget(toggle_lbl)
         toggle_row.addSpacing(6)

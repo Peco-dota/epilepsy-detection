@@ -37,11 +37,6 @@ class CSVLogger:
             "freeze_score",
             "freeze_duration",
             "is_frozen",
-            "audio_rms",
-            "audio_groan_count",
-            "audio_warning",
-            "audio_triggered",
-            "audio_has_triggered",
             "pre_ictal_score",
             "pre_ictal_stage"
         ]
@@ -141,10 +136,7 @@ class CSVLogger:
         def pct(count):
             return f"{round(count / total * 100)}%" if total > 0 else "N/A"
 
-        score_keys = [
-            'head_score', 'droop_score', 'eye_score', 'blink_score', 'twitch_score', 'freeze_score',
-            'audio_rms', 'audio_groan_count', 'audio_warning', 'audio_triggered', 'audio_has_triggered'
-        ]
+        score_keys = ['head_score', 'droop_score', 'eye_score', 'blink_score', 'twitch_score', 'freeze_score']
         scores_text = ""
         for key in score_keys:
             if key in summary['metrics']:

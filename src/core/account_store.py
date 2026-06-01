@@ -8,7 +8,7 @@ import uuid
 from pathlib import Path
 from datetime import datetime
 
-DATA_DIR      = Path(__file__).parent.parent / 'data'
+DATA_DIR      = Path(__file__).parent.parent.parent / 'data'
 PATIENTS_DIR  = DATA_DIR / 'patients'
 AVATARS_DIR   = DATA_DIR / 'avatars'
 ACCOUNTS_FILE = DATA_DIR / 'accounts.json'
@@ -172,6 +172,61 @@ def save_weights(patient_id: str, weights: dict):
     if patient:
         patient['weights'] = weights
         save_patient(patient)
+
+
+# ── Account management ───────────────────────────────────────────────────────
+
+def change_email(current_email: str, new_email: str, password: str) -> tuple[bool, str]:
+    new_email = new_email.strip().lower()
+    if not new_email or '@' not in new_email:
+        return False, 'Enter a valid email address'
+    data = _load_data()
+    account = _find_account(data, current_email)
+    if not account:
+        return False, 'Account not found'
+    if account['password_hash'] != _hash(password):
+        return False, 'Incorrect password'
+    if _find_account(data, new_email):
+        return False, 'That email is already in use'
+    account['email'] = new_email
+    if data.get('current_email') == current_email:
+        data['current_email'] = new_email
+    _save_data(data)
+    return True, ''
+
+
+def change_password(email: str, current_password: str, new_password: str) -> tuple[bool, str]:
+    if len(new_password) < 6:
+        return False, 'Password must be at least 6 characters'
+    data = _load_data()
+    account = _find_account(data, email)
+    if not account:
+        return False, 'Account not found'
+    if account['password_hash'] != _hash(current_password):
+        return False, 'Current password is incorrect'
+    account['password_hash'] = _hash(new_password)
+    _save_data(data)
+    return True, ''
+
+
+# ── Notification phones ───────────────────────────────────────────────────────
+
+def get_notification_phones(email: str = '') -> list:
+    data = _load_data()
+    email = email or data.get('current_email', '')
+    account = _find_account(data, email)
+    if not account:
+        return []
+    return account.get('notification_phones', [])
+
+
+def save_notification_phones(phones: list, email: str = ''):
+    data = _load_data()
+    email = email or data.get('current_email', '')
+    account = _find_account(data, email)
+    if account:
+        account['notification_phones'] = [p for p in phones if p.strip()]
+        _save_data(data)
 
 
 def save_avatar_photo(patient_id: str, source_path: str) -> str:

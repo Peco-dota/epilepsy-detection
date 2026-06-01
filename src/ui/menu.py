@@ -9,77 +9,79 @@ import sys
 import json
 import re
 
-STYLE = """
-QMainWindow, QWidget {
-    background-color: #f4f3ee;
-    color: #1c1917;
+from ui.theme import BG, CARD, TEXT, MUTED, ACCENT, ACCENT2, BORDER, INPUT_BG
+
+STYLE = f"""
+QMainWindow, QWidget {{
+    background-color: {BG};
+    color: {TEXT};
     font-family: 'SF Pro Text', 'Segoe UI', sans-serif;
-}
-QLabel { color: #1c1917; }
-QTextEdit {
-    background-color: #ffffff;
-    color: #1c1917;
-    border: 1px solid rgba(177,173,161,0.55);
+}}
+QLabel {{ color: {TEXT}; }}
+QTextEdit {{
+    background-color: {INPUT_BG};
+    color: {TEXT};
+    border: 1px solid {BORDER};
     border-radius: 8px;
     padding: 10px;
     font-size: 14px;
-}
-QTextEdit:focus { border: 1px solid #c15f3c; }
-QPushButton {
+}}
+QTextEdit:focus {{ border: 1px solid {ACCENT}; }}
+QPushButton {{
     border-radius: 8px;
     padding: 10px 24px;
     font-size: 14px;
     font-weight: bold;
     border: none;
-}
-QPushButton#primary {
-    background: qlineargradient(x1:0,y1:0,x2:1,y2:0,stop:0 #c15f3c,stop:1 #d4724e);
+}}
+QPushButton#primary {{
+    background: qlineargradient(x1:0,y1:0,x2:1,y2:0,stop:0 {ACCENT},stop:1 {ACCENT2});
     color: #ffffff;
-}
-QPushButton#primary:hover {
+}}
+QPushButton#primary:hover {{
     background: qlineargradient(x1:0,y1:0,x2:1,y2:0,stop:0 #ad5434,stop:1 #c46444);
-}
-QPushButton#primary:disabled { background-color: rgba(177,173,161,0.35); color: #b1ada1; }
-QPushButton#secondary {
+}}
+QPushButton#primary:disabled {{ background-color: rgba(177,173,161,0.35); color: #b1ada1; }}
+QPushButton#secondary {{
     background-color: rgba(177,173,161,0.2);
-    color: #1c1917;
+    color: {TEXT};
     border: 1px solid rgba(177,173,161,0.5);
-}
-QPushButton#secondary:hover { background-color: rgba(177,173,161,0.35); }
-QScrollArea { border: none; background-color: transparent; }
-QScrollBar:vertical {
+}}
+QPushButton#secondary:hover {{ background-color: rgba(177,173,161,0.35); }}
+QScrollArea {{ border: none; background-color: transparent; }}
+QScrollBar:vertical {{
     background: transparent; width: 4px; border-radius: 2px;
-}
-QScrollBar::handle:vertical { background: rgba(177,173,161,0.5); border-radius: 2px; }
-QSlider::groove:horizontal {
+}}
+QScrollBar::handle:vertical {{ background: rgba(177,173,161,0.5); border-radius: 2px; }}
+QSlider::groove:horizontal {{
     height: 4px; background: rgba(177,173,161,0.4); border-radius: 2px;
-}
-QSlider::handle:horizontal {
-    background: #c15f3c; width: 16px; height: 16px;
+}}
+QSlider::handle:horizontal {{
+    background: {ACCENT}; width: 16px; height: 16px;
     margin: -6px 0; border-radius: 8px;
-}
-QSlider::sub-page:horizontal { background: #c15f3c; border-radius: 2px; }
-QFrame#card { background-color: #ffffff; border-radius: 12px; border: 1px solid rgba(177,173,161,0.3); }
-QPushButton#chip {
-    background-color: #ffffff;
-    color: #6b6460;
+}}
+QSlider::sub-page:horizontal {{ background: {ACCENT}; border-radius: 2px; }}
+QFrame#card {{ background-color: {CARD}; border-radius: 12px; border: 1px solid {BORDER}; }}
+QPushButton#chip {{
+    background-color: {CARD};
+    color: {MUTED};
     border: 1.5px solid rgba(177,173,161,0.6);
     border-radius: 8px;
     padding: 0px;
     font-size: 13px;
     font-weight: normal;
-}
-QPushButton#chip:checked {
-    background-color: #c15f3c;
+}}
+QPushButton#chip:checked {{
+    background-color: {ACCENT};
     color: #ffffff;
-    border: 1.5px solid #c15f3c;
+    border: 1.5px solid {ACCENT};
     font-weight: 600;
-}
-QPushButton#chip:hover:!checked {
-    border-color: #c15f3c;
+}}
+QPushButton#chip:hover:!checked {{
+    border-color: {ACCENT};
     background-color: rgba(193,95,60,0.04);
-    color: #1c1917;
-}
+    color: {TEXT};
+}}
 """
 
 
@@ -169,8 +171,9 @@ class EpiGuardMenu(QMainWindow):
         layout.setContentsMargins(56, 24, 56, 24)
         layout.setSpacing(0)
 
-        layout.addWidget(self._step_indicator(0))
-        layout.addSpacing(12)
+        if self.mode != 'checkin':
+            layout.addWidget(self._step_indicator(0))
+            layout.addSpacing(12)
 
         title = QLabel("Good to see you!")
         title.setFont(QFont("SF Pro Display", 24, QFont.Bold))
@@ -239,17 +242,22 @@ class EpiGuardMenu(QMainWindow):
         layout.addSpacing(14)
 
         if self.mode == 'checkin':
-            self.context_btn = QPushButton("▶  Start Monitoring")
-            self.context_btn.setObjectName("primary")
-            self.context_btn.setFixedHeight(48)
-            self.context_btn.clicked.connect(self._go_to_screen_1)
-            layout.addWidget(self.context_btn)
-            layout.addSpacing(8)
+            btn_row = QHBoxLayout()
+            btn_row.setSpacing(12)
+
             skip_btn = QPushButton("Skip check-in")
             skip_btn.setObjectName("secondary")
-            skip_btn.setFixedHeight(34)
+            skip_btn.setFixedHeight(44)
             skip_btn.clicked.connect(self._checkin_submit_empty)
-            layout.addWidget(skip_btn)
+            btn_row.addWidget(skip_btn, stretch=1)
+
+            self.context_btn = QPushButton("▶  Start Monitoring")
+            self.context_btn.setObjectName("primary")
+            self.context_btn.setFixedHeight(44)
+            self.context_btn.clicked.connect(self._go_to_screen_1)
+            btn_row.addWidget(self.context_btn, stretch=2)
+
+            layout.addLayout(btn_row)
         else:
             btn_row = QHBoxLayout()
             btn_row.setSpacing(10)

@@ -11,8 +11,8 @@ debug = '--debug' in sys.argv
 solo_video = True
 
 # ── Clients ────────────────────────────────────────────────────────────────────
-from gpt_client import AIClient
-from twilio_client import TwilioClient
+from services.gpt_client import AIClient
+from services.twilio_client import TwilioClient
 
 try:
     # Set to True only when you want to use the API.
@@ -29,7 +29,7 @@ if all(os.getenv(k) for k in ['TWILIO_ACCOUNT_SID', 'TWILIO_AUTH_TOKEN', 'TWILIO
 
 # ── Debug shortcut ─────────────────────────────────────────────────────────────
 if debug:
-    from face_detection import FaceDetection
+    from detectors.face_detection import FaceDetection
     fd = FaceDetection(debug=True, solo_video=solo_video, ai_client=client, sms_client=twilio_client)
     fd.face_freeze_module_init()
     fd.eye_tracking_module_init()
@@ -42,7 +42,7 @@ if debug:
     sys.exit(0)
 
 # ── Login / register ───────────────────────────────────────────────────────────
-from auth_screen import show_auth
+from ui.auth_screen import show_auth
 email = show_auth()
 if not email:
     sys.exit(0)
@@ -50,24 +50,25 @@ if not email:
 # ── Patient selector + daily check-in (managed inside PatientsScreen) ─────────
 # show_patients returns {'patient': ..., 'config': ...} only when monitoring
 # should start. Closing the check-in loops back to patient selection internally.
-from patients_screen import show_patients
+from ui.patients_screen import show_patients
 
-result = show_patients(client=client, twilio_client=twilio_client)
-if result is None:
-    sys.exit(0)
+while True:
+    result = show_patients(client=client, twilio_client=twilio_client)
+    if result is None:
+        sys.exit(0)
 
-patient = result['patient']
-config  = result['config']
+    patient = result['patient']
+    config  = result.get('config', {}) or {}
 
-# ── Start monitoring ───────────────────────────────────────────────────────────
-from face_detection import FaceDetection
-face_detection = FaceDetection(
-    debug=False,
-    solo_video=solo_video,
-    ai_client=client,
-    sms_client=twilio_client,
-    patient_id=patient['id'],
-)
+    # ── Start monitoring ──────────────────────────────────────────────────────────
+    from detectors.face_detection import FaceDetection
+    face_detection = FaceDetection(
+        debug=False,
+        solo_video=solo_video,
+        ai_client=client,
+        sms_client=twilio_client,
+        patient_id=patient['id'],
+    )
 
 face_detection.face_freeze_module_init()
 face_detection.eye_tracking_module_init()
@@ -78,10 +79,10 @@ face_detection.face_drooping_model_init()
 face_detection.health_monitor_module_init()
 face_detection.audio_module_init()
 
-if config.get('context_multipliers'):
-    face_detection.apply_context_multipliers(config['context_multipliers'])
-    if config.get('context_summary'):
-        print(f"📋 Context: {config['context_summary']}")
+    if config and config.get('context_multipliers'):
+        face_detection.apply_context_multipliers(config['context_multipliers'])
+        if config.get('context_summary'):
+            print(f"📋 Context: {config['context_summary']}")
 
-face_detection.patient_name = patient.get('name', '')
-face_detection.start()
+    face_detection.patient_name = patient.get('name', '')
+    face_detection.start()

@@ -2,7 +2,7 @@ import json
 from pathlib import Path
 from datetime import datetime
 
-PROFILE_FILE = Path(__file__).parent.parent / 'profile.json'
+PROFILE_FILE = Path(__file__).parent.parent.parent / 'config' / 'profile.json'
 
 DEFAULT = {
     'setup_complete': False,

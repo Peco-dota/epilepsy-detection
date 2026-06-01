@@ -4,104 +4,98 @@ import re
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QLabel, QTextEdit, QTextBrowser, QPushButton, QScrollArea, QFrame, QSplitter,
-    QProgressBar, QSlider, QSizePolicy
+    QProgressBar, QSlider, QSizePolicy, QGraphicsDropShadowEffect, QGraphicsOpacityEffect,
 )
-from PySide6.QtCore import Qt, QThread, Signal, QTimer
-from PySide6.QtGui import QFont
+from PySide6.QtCore import Qt, QThread, Signal, QTimer, QPropertyAnimation, QEasingCurve
+from PySide6.QtGui import QFont, QColor
 from PySide6.QtWebEngineWidgets import QWebEngineView
 
-STYLE = """
-QMainWindow, QWidget {
-    background-color: #1e1e2e;
-    color: #cdd6f4;
-    font-family: 'SF Pro Text', 'Segoe UI', sans-serif;
-}
-QLabel { color: #cdd6f4; }
-QTextEdit {
-    background-color: #313244;
-    color: #cdd6f4;
-    border: 1px solid #45475a;
-    border-radius: 8px;
-    padding: 10px;
+from ui.theme import BG, TEXT, MUTED, ACCENT, ACCENT2, CARD, BORDER
+
+STYLE = f"""
+QMainWindow, QWidget {{
+    background-color: {BG};
+    color: {TEXT};
+    font-family: 'SF Pro Text', 'Inter', 'Segoe UI', sans-serif;
+}}
+QLabel {{ color: {TEXT}; background: transparent; }}
+QTextEdit {{
+    background-color: {CARD};
+    color: {TEXT};
+    border: 1.5px solid rgba(177,173,161,0.45);
+    border-radius: 12px;
+    padding: 10px 14px;
     font-size: 13px;
-}
-QTextEdit:focus { border: 1px solid #89b4fa; }
-QPushButton {
-    border-radius: 8px;
+}}
+QTextEdit:focus {{ border-color: {ACCENT}; }}
+QPushButton {{
+    border-radius: 10px;
     padding: 10px 20px;
     font-size: 13px;
     font-weight: bold;
     border: none;
-}
-QPushButton#primary {
-    background-color: #89b4fa;
-    color: #1e1e2e;
-}
-QPushButton#primary:hover { background-color: #b4befe; }
-QPushButton#primary:disabled { background-color: #45475a; color: #6c7086; }
-QPushButton#secondary {
-    background-color: #45475a;
-    color: #cdd6f4;
-}
-QPushButton#secondary:hover { background-color: #585b70; }
-QPushButton#save {
-    background-color: #a6e3a1;
-    color: #1e1e2e;
-}
-QPushButton#save:hover { background-color: #94e2d5; }
-QScrollArea { border: none; background: transparent; }
-QScrollBar:vertical {
-    background: #313244; width: 6px; border-radius: 3px;
-}
-QScrollBar::handle:vertical { background: #585b70; border-radius: 3px; }
-QSplitter::handle { background: #45475a; width: 1px; }
-QFrame#card {
-    background-color: #313244;
-    border-radius: 12px;
-}
-QProgressBar {
-    background-color: #45475a;
-    border-radius: 4px;
-    height: 8px;
-    text-align: center;
+}}
+QPushButton#primary {{
+    background: qlineargradient(x1:0,y1:0,x2:1,y2:0,stop:0 {ACCENT},stop:1 {ACCENT2});
+    color: #ffffff;
+}}
+QPushButton#primary:hover {{
+    background: qlineargradient(x1:0,y1:0,x2:1,y2:0,stop:0 #ad5434,stop:1 #c46444);
+}}
+QPushButton#primary:disabled {{ background-color: rgba(177,173,161,0.35); color: #b1ada1; }}
+QPushButton#secondary {{
+    background-color: rgba(177,173,161,0.18);
+    color: {TEXT};
+    border: 1px solid rgba(177,173,161,0.45);
+}}
+QPushButton#secondary:hover {{ background-color: rgba(177,173,161,0.3); }}
+QPushButton#save {{
+    background: qlineargradient(x1:0,y1:0,x2:1,y2:0,stop:0 #15803d,stop:1 #16a34a);
+    color: #ffffff;
+}}
+QPushButton#save:hover {{ background: #166534; }}
+QScrollArea {{ border: none; background: transparent; }}
+QScrollBar:vertical {{
+    background: transparent; width: 5px; border-radius: 3px; margin: 0;
+}}
+QScrollBar::handle:vertical {{
+    background: rgba(177,173,161,0.6); border-radius: 3px; min-height: 24px;
+}}
+QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{ height: 0; }}
+QSplitter::handle {{ background: rgba(177,173,161,0.25); width: 1px; }}
+QFrame#card {{
+    background-color: {CARD};
+    border-radius: 16px;
+    border: 1px solid rgba(177,173,161,0.45);
+}}
+QProgressBar {{
+    background-color: rgba(177,173,161,0.18);
+    border-radius: 5px;
     border: none;
-}
-QProgressBar::chunk {
-    border-radius: 4px;
-}
-QSlider::groove:horizontal {
-    height: 4px;
-    background: #45475a;
-    border-radius: 2px;
-}
-QSlider::handle:horizontal {
-    background: #89b4fa;
-    width: 16px;
-    height: 16px;
-    margin: -6px 0;
-    border-radius: 8px;
-}
-QSlider::sub-page:horizontal {
-    background: #89b4fa;
-    border-radius: 2px;
-}
-QPushButton#apply {
-    background-color: #cba6f7;
-    color: #1e1e2e;
-}
-QPushButton#apply:hover { background-color: #b4befe; }
-QPushButton#toggle {
+    max-height: 10px;
+    min-height: 10px;
+}}
+QProgressBar::chunk {{ border-radius: 5px; }}
+QSlider::groove:horizontal {{
+    height: 4px; background: rgba(177,173,161,0.4); border-radius: 2px;
+}}
+QSlider::handle:horizontal {{
+    background: {ACCENT}; width: 16px; height: 16px;
+    margin: -6px 0; border-radius: 8px;
+}}
+QSlider::sub-page:horizontal {{ background: {ACCENT}; border-radius: 2px; }}
+QPushButton#toggle {{
     background-color: transparent;
-    color: #89b4fa;
-    border: 1px solid #45475a;
-    border-radius: 8px;
+    color: {ACCENT};
+    border: 1.5px solid rgba(193,95,60,0.35);
+    border-radius: 10px;
     padding: 6px 14px;
     font-size: 12px;
-}
-QPushButton#toggle:hover { background-color: #313244; }
+    font-weight: 600;
+}}
+QPushButton#toggle:hover {{ background-color: rgba(193,95,60,0.06); }}
 """
 
-# HTML template for the AI analysis pane (renders markdown properly)
 AI_HTML_TEMPLATE = """
 <!DOCTYPE html>
 <html>
@@ -109,40 +103,45 @@ AI_HTML_TEMPLATE = """
 <meta charset="utf-8">
 <style>
   * {{ margin: 0; padding: 0; box-sizing: border-box; }}
-  body {{
-    background: #313244;
-    color: #cdd6f4;
-    font-family: -apple-system, 'SF Pro Text', 'Segoe UI', sans-serif;
+  html, body {{ background: transparent; margin: 0; padding: 0; }}
+  .content-wrap {{
+    background: #ffffff;
+    border-radius: 12px;
+    color: #1c1917;
+    font-family: 'SF Pro Text', 'Segoe UI', sans-serif;
     font-size: 14px;
-    line-height: 1.7;
-    padding: 18px 20px;
+    line-height: 1.75;
+    padding: 20px 22px;
   }}
   h1, h2, h3 {{
-    color: #89b4fa;
-    margin: 14px 0 6px 0;
-    font-weight: 600;
+    color: #c15f3c;
+    margin: 16px 0 6px 0;
+    font-weight: 700;
+    letter-spacing: -0.2px;
   }}
   h1 {{ font-size: 18px; }}
-  h2 {{ font-size: 16px; }}
-  h3 {{ font-size: 14px; }}
+  h2 {{ font-size: 15px; }}
+  h3 {{ font-size: 13px; text-transform: uppercase; letter-spacing: 0.5px; color: #8a847a; }}
   p {{ margin-bottom: 10px; }}
   ul, ol {{ padding-left: 20px; margin-bottom: 10px; }}
-  li {{ margin-bottom: 4px; }}
-  strong {{ color: #cba6f7; }}
-  em {{ color: #f5c2e7; }}
+  li {{ margin-bottom: 5px; }}
+  strong {{ color: #a16207; }}
+  em {{ color: #78350f; }}
   code {{
-    background: #45475a;
+    background: rgba(177,173,161,0.15);
     padding: 2px 6px;
     border-radius: 4px;
-    font-family: 'Courier New', monospace;
+    font-family: 'SF Mono', 'Courier New', monospace;
     font-size: 12px;
+    color: #b91c1c;
   }}
-  .warning {{ color: #f9e2af; }}
-  .ok {{ color: #a6e3a1; }}
-  .critical {{ color: #f38ba8; }}
+  .warning {{ color: #b45309; }}
+  .ok {{ color: #15803d; font-weight: 600; }}
+  .critical {{ color: #b91c1c; font-weight: 600; }}
+  hr {{ border: none; border-top: 1px solid rgba(177,173,161,0.3); margin: 14px 0; }}
 </style>
 </head>
-<body>{content}</body>
+<body><div class="content-wrap">{content}</div></body>
 </html>
 """
 
@@ -151,18 +150,14 @@ def markdown_to_html(md):
     """Convert basic markdown to HTML for display."""
     import html as html_module
     text = html_module.escape(md)
-    # headers
     text = re.sub(r'^### (.+)$', r'<h3>\1</h3>', text, flags=re.MULTILINE)
     text = re.sub(r'^## (.+)$', r'<h2>\1</h2>', text, flags=re.MULTILINE)
     text = re.sub(r'^# (.+)$', r'<h1>\1</h1>', text, flags=re.MULTILINE)
-    # bold / italic / inline code
     text = re.sub(r'\*\*(.+?)\*\*', r'<strong>\1</strong>', text)
     text = re.sub(r'\*(.+?)\*', r'<em>\1</em>', text)
     text = re.sub(r'`(.+?)`', r'<code>\1</code>', text)
-    # bullet lists
     text = re.sub(r'^\* (.+)$', r'<li>\1</li>', text, flags=re.MULTILINE)
     text = re.sub(r'(<li>.*?</li>(\n|$))+', lambda m: '<ul>' + m.group(0) + '</ul>', text, flags=re.DOTALL)
-    # paragraphs (double newline)
     parts = re.split(r'\n{2,}', text)
     result = []
     for part in parts:
@@ -186,7 +181,6 @@ def parse_stats(summary_text):
     for line in summary_text.split('\n'):
         line = line.strip()
 
-        # "Session duration: 20 seconds (20 logged records)"
         m = re.match(r'Session duration: (\d+) seconds', line)
         if m:
             duration = int(m.group(1))
@@ -195,20 +189,14 @@ def parse_stats(summary_text):
         if m:
             records = int(m.group(1))
 
-        # new format: "- key: avg=X max=Y"
         m = re.match(r'- (\w+): avg=([\d.]+) max=([\d.]+)', line)
         if m:
-            metrics[m.group(1)] = {
-                'avg': float(m.group(2)),
-                'max': float(m.group(3)),
-            }
+            metrics[m.group(1)] = {'avg': float(m.group(2)), 'max': float(m.group(3))}
 
-        # heart rate: "avg=72 BPM, max=96 BPM"
         m = re.search(r'avg=([\d.]+) BPM.*max=([\d.]+) BPM', line)
         if m:
             metrics['heart_rate'] = {'avg': float(m.group(1)), 'max': float(m.group(2))}
 
-        # high-score event lines: "- Label (>X): N records = Y% of session"
         m = re.match(r'- (.+?)(?:\s*\(>[^)]+\))?: (\d+) records = ([\d.]+)% of session', line)
         if m:
             events[m.group(1).strip()] = {'count': int(m.group(2)), 'pct': float(m.group(3))}
@@ -238,7 +226,7 @@ class ChatWorker(QThread):
 
     def run(self):
         try:
-            from gpt_client import GEMINI_MODEL, _call_with_retry
+            from services.gpt_client import GEMINI_MODEL, _call_with_retry
             result = _call_with_retry(lambda: self.client.client.chat.completions.create(
                 model=GEMINI_MODEL,
                 messages=self.messages
@@ -276,15 +264,24 @@ class SessionReviewWindow(QMainWindow):
         self.summary_text = summary_text
         self.chat_history = []
         self.pending_weights = None
-
         self.is_interim = is_interim
+
         self.setWindowTitle("EpiGuard — Mid-session Review" if is_interim else "EpiGuard — Session Review")
-        self.resize(1280, 820)
+        self.resize(1300, 840)
         self.setStyleSheet(STYLE)
         self._center()
         self._build_ui(summary_text, ai_analysis, filepath)
 
-        # human-readable names for weights — never expose technical keys to the user
+        # fade-in
+        effect = QGraphicsOpacityEffect(self.centralWidget())
+        self.centralWidget().setGraphicsEffect(effect)
+        anim = QPropertyAnimation(effect, b'opacity', self)
+        anim.setDuration(220)
+        anim.setStartValue(0.0)
+        anim.setEndValue(1.0)
+        anim.setEasingCurve(QEasingCurve.OutQuart)
+        anim.start()
+
         weight_descriptions = {
             "w_shake":    "sensitivity to head shaking/tremors",
             "w_blink":    "sensitivity to abnormal blinking",
@@ -334,43 +331,104 @@ class SessionReviewWindow(QMainWindow):
     # ── UI construction ───────────────────────────────────────────────────
 
     def _build_ui(self, summary_text, ai_analysis, filepath):
+        # Parse stats early so we can show duration/records in the header
+        duration, records, metrics, events = parse_stats(summary_text)
+
         root = QWidget()
         self.setCentralWidget(root)
         main_layout = QVBoxLayout(root)
         main_layout.setContentsMargins(0, 0, 0, 0)
         main_layout.setSpacing(0)
 
+        # Terracotta accent stripe
+        accent_line = QWidget()
+        accent_line.setFixedHeight(3)
+        accent_line.setStyleSheet(
+            "background: qlineargradient(x1:0,y1:0,x2:1,y2:0,"
+            f"stop:0 {ACCENT},stop:1 {ACCENT2});"
+        )
+        main_layout.addWidget(accent_line)
+
         # Header
         header = QWidget()
-        header.setStyleSheet("background-color: #181825; border-bottom: 1px solid #313244;")
-        header.setFixedHeight(60)
+        header.setStyleSheet(f"background-color: {BG}; border-bottom: 1px solid rgba(177,173,161,0.35);")
+        header.setFixedHeight(68)
         h_row = QHBoxLayout(header)
-        h_row.setContentsMargins(24, 0, 24, 0)
-        title = QLabel("⏱  Mid-session Review" if self.is_interim else "📊  Session Review")
-        title.setFont(QFont("SF Pro Display", 17, QFont.Bold))
-        title.setStyleSheet("color: #89b4fa;")
-        h_row.addWidget(title)
-        h_row.addStretch()
-        if filepath:
-            fp = QLabel(f"📁  {filepath}")
-            fp.setStyleSheet("color: #6c7086; font-size: 11px;")
-            h_row.addWidget(fp)
+        h_row.setContentsMargins(28, 0, 28, 0)
+        h_row.setSpacing(12)
 
-        h_row.addSpacing(20)
-        new_session_btn = QPushButton("▶  Start New Session")
+        # Logo badge
+        logo = QLabel("EG")
+        logo.setFixedSize(34, 34)
+        logo.setAlignment(Qt.AlignCenter)
+        logo.setFont(QFont('', 12, QFont.Bold))
+        logo.setStyleSheet(
+            f"background: qlineargradient(x1:0,y1:0,x2:1,y2:1,stop:0 {ACCENT},stop:1 {ACCENT2});"
+            "color: #ffffff; border-radius: 10px;"
+        )
+        h_row.addWidget(logo)
+
+        # Title
+        title = QLabel("Mid-session Review" if self.is_interim else "Session Review")
+        title.setFont(QFont('', 17, QFont.Bold))
+        title.setStyleSheet(f"color: {TEXT};")
+        h_row.addWidget(title)
+        h_row.addSpacing(8)
+
+        # Status badge
+        badge_text = "Paused" if self.is_interim else "Complete"
+        badge = QLabel(f"● {badge_text}")
+        badge.setFont(QFont('', 11, QFont.Bold))
+        badge.setFocusPolicy(Qt.NoFocus)
+        badge.setStyleSheet(
+            f"background: rgba(193,95,60,0.13); color: {ACCENT};"
+            "border-radius: 8px; padding: 4px 10px; border: none;"
+        )
+        h_row.addWidget(badge)
+
+        # Session meta: duration + records as muted text in header
+        if duration is not None:
+            mins = duration // 60
+            secs = duration % 60
+            dur_text = f"{mins}m {secs}s" if mins else f"{secs}s"
+            meta_parts = [dur_text]
+            if records:
+                meta_parts.append(f"{records} records")
+            meta_lbl = QLabel("  ·  " + "  ·  ".join(meta_parts))
+            meta_lbl.setFont(QFont('', 12))
+            meta_lbl.setStyleSheet(f"color: {MUTED};")
+            h_row.addWidget(meta_lbl)
+
+        h_row.addStretch()
+
+        if filepath:
+            fp = QLabel(filepath.split('/')[-1] if '/' in filepath else filepath)
+            fp.setStyleSheet(f"color: {MUTED}; font-size: 11px;")
+            h_row.addWidget(fp)
+            h_row.addSpacing(16)
+
+        new_session_btn = QPushButton("▶  New Session")
+        new_session_btn.setFixedHeight(38)
+        new_session_btn.setFocusPolicy(Qt.NoFocus)
+        new_session_btn.setCursor(Qt.PointingHandCursor)
         new_session_btn.setStyleSheet(
-            "QPushButton { background-color: #a6e3a1; color: #1e1e2e; border-radius: 8px;"
-            "font-size: 13px; font-weight: bold; border: none; padding: 8px 16px; }"
-            "QPushButton:hover { background-color: #94e2d5; }"
+            "QPushButton { background: qlineargradient(x1:0,y1:0,x2:1,y2:0,"
+            f"stop:0 {ACCENT},stop:1 {ACCENT2}); color: #ffffff; border: none;"
+            "border-radius: 10px; font-size: 13px; font-weight: bold; padding: 0 18px; }"
+            f"QPushButton:hover {{ background: qlineargradient(x1:0,y1:0,x2:1,y2:0,"
+            "stop:0 #ad5434,stop:1 #c46444); }"
         )
         new_session_btn.clicked.connect(self._start_new_session)
         h_row.addWidget(new_session_btn)
 
-        close_btn = QPushButton("✕  Close")
+        close_btn = QPushButton("Close")
+        close_btn.setFixedHeight(38)
+        close_btn.setFocusPolicy(Qt.NoFocus)
+        close_btn.setCursor(Qt.PointingHandCursor)
         close_btn.setStyleSheet(
-            "QPushButton { background-color: #45475a; color: #cdd6f4; border-radius: 8px;"
-            "font-size: 13px; font-weight: bold; border: none; padding: 8px 16px; }"
-            "QPushButton:hover { background-color: #585b70; }"
+            f"QPushButton {{ background: transparent; color: {TEXT}; border: 1px solid rgba(177,173,161,0.55);"
+            "border-radius: 10px; font-size: 13px; font-weight: 600; padding: 0 18px; }"
+            "QPushButton:hover { background: rgba(177,173,161,0.2); }"
         )
         close_btn.clicked.connect(self.close)
         h_row.addWidget(close_btn)
@@ -379,12 +437,15 @@ class SessionReviewWindow(QMainWindow):
 
         if self.is_interim:
             pause_bar = QWidget()
-            pause_bar.setStyleSheet("background-color: #1e3a5f;")
-            pause_bar.setFixedHeight(32)
+            pause_bar.setStyleSheet(
+                "background-color: rgba(193,95,60,0.07);"
+                "border-bottom: 1px solid rgba(193,95,60,0.15);"
+            )
+            pause_bar.setFixedHeight(34)
             pb_layout = QHBoxLayout(pause_bar)
-            pb_layout.setContentsMargins(24, 0, 24, 0)
+            pb_layout.setContentsMargins(28, 0, 28, 0)
             pb_lbl = QLabel("⏸  Monitoring is paused — close this window to resume")
-            pb_lbl.setStyleSheet("color: #89b4fa; font-size: 12px;")
+            pb_lbl.setStyleSheet(f"color: {ACCENT}; font-size: 12px; font-weight: 600;")
             pb_layout.addWidget(pb_lbl)
             pb_layout.addStretch()
             main_layout.addWidget(pause_bar)
@@ -396,156 +457,183 @@ class SessionReviewWindow(QMainWindow):
         # ── Left panel ────────────────────────────────────────────────────
         left_scroll = QScrollArea()
         left_scroll.setWidgetResizable(True)
-        left_scroll.setStyleSheet("background: #1e1e2e;")
+        left_scroll.setStyleSheet("background: transparent;")
         left_inner = QWidget()
         left_inner.setStyleSheet("background: transparent;")
         left_layout = QVBoxLayout(left_inner)
-        left_layout.setContentsMargins(24, 24, 16, 24)
+        left_layout.setContentsMargins(28, 28, 18, 28)
         left_layout.setSpacing(16)
 
-        report_lbl = QLabel("Session Report")
-        report_lbl.setFont(QFont("SF Pro Display", 15, QFont.Bold))
-        left_layout.addWidget(report_lbl)
-
-        # AI analysis — rendered as HTML
+        # AI analysis card
         if ai_analysis:
             ai_card = self._make_card()
             ai_card_layout = QVBoxLayout(ai_card)
-            ai_card_layout.setContentsMargins(16, 14, 16, 14)
-            hdr = QLabel("🤖  AI Analysis")
-            hdr.setFont(QFont("SF Pro Text", 12, QFont.Bold))
-            hdr.setStyleSheet("color: #a6e3a1; margin-bottom: 6px;")
-            ai_card_layout.addWidget(hdr)
+            ai_card_layout.setContentsMargins(20, 18, 20, 18)
+            ai_card_layout.setSpacing(10)
+
+            ai_hdr_row = QHBoxLayout()
+            ai_dot = QLabel()
+            ai_dot.setFixedSize(10, 10)
+            ai_dot.setStyleSheet("background: #15803d; border-radius: 5px;")
+            ai_hdr_row.addWidget(ai_dot)
+            ai_hdr_row.addSpacing(8)
+            ai_hdr_lbl = QLabel("AI Analysis")
+            ai_hdr_lbl.setFont(QFont('', 13, QFont.Bold))
+            ai_hdr_lbl.setStyleSheet("color: #15803d;")
+            ai_hdr_row.addWidget(ai_hdr_lbl)
+            ai_hdr_row.addStretch()
+            ai_card_layout.addLayout(ai_hdr_row)
 
             web = QWebEngineView()
-            web.setMinimumHeight(220)
+            web.setMinimumHeight(200)
             html_content = markdown_to_html(ai_analysis)
             web.setHtml(AI_HTML_TEMPLATE.format(content=html_content))
             web.setStyleSheet("background: transparent; border: none;")
+            web.page().setBackgroundColor(QColor(0, 0, 0, 0))
             ai_card_layout.addWidget(web)
             left_layout.addWidget(ai_card)
 
-        # Metric cards
-        duration, records, metrics, events = parse_stats(summary_text)
+        # Detection scores section
+        left_layout.addWidget(self._section_label("Detection Scores"))
+        left_layout.addSpacing(4)
 
-        # Session info bar
-        if duration is not None:
-            info_row = QHBoxLayout()
-            info_row.setSpacing(12)
-            info_row.addWidget(self._info_chip(f"⏱  {duration}s session"))
-            if records:
-                info_row.addWidget(self._info_chip(f"📋  {records} records"))
-            info_row.addStretch()
-            left_layout.addLayout(info_row)
+        score_map = [
+            ('head_score',   'Head shake',      '#b91c1c'),
+            ('blink_score',  'Blinking',         '#d97706'),
+            ('eye_score',    'Eye movement',     '#ca8a04'),
+            ('droop_score',  'Face asymmetry',   '#7e22ce'),
+            ('freeze_score', 'Face freeze',      '#0369a1'),
+            ('twitch_score', 'Twitching',        '#15803d'),
+            ('health_score', 'Health score',     '#b91c1c'),
+        ]
 
-        # Score bars
-        score_map = {
-            'head_score':   ('🤚  Head shake',    '#f38ba8'),
-            'blink_score':  ('👁  Blinking',       '#fab387'),
-            'eye_score':    ('👁  Eye movement',   '#f9e2af'),
-            'droop_score':  ('↔️  Face asymmetry', '#cba6f7'),
-            'freeze_score': ('🧊  Face freeze',    '#89dceb'),
-            'twitch_score': ('⚡  Twitching',      '#a6e3a1'),
-            'health_score': ('❤️  Health score',   '#f38ba8'),
-        }
         scores_card = self._make_card()
         scores_layout = QVBoxLayout(scores_card)
-        scores_layout.setContentsMargins(16, 14, 16, 14)
-        scores_layout.setSpacing(10)
-        hdr2 = QLabel("📈  Detection Scores")
-        hdr2.setFont(QFont("SF Pro Text", 12, QFont.Bold))
-        hdr2.setStyleSheet("color: #89b4fa; margin-bottom: 4px;")
-        scores_layout.addWidget(hdr2)
+        scores_layout.setContentsMargins(20, 18, 20, 18)
+        scores_layout.setSpacing(14)
 
         has_scores = False
-        for key, (label, color) in score_map.items():
-            if key in metrics:
-                has_scores = True
-                avg = metrics[key]['avg']
-                mx = metrics[key]['max']
-                row = QHBoxLayout()
-                lbl = QLabel(label)
-                lbl.setFixedWidth(160)
-                lbl.setStyleSheet("color: #a6adc8; font-size: 12px;")
-                row.addWidget(lbl)
+        for key, label, color in score_map:
+            if key not in metrics:
+                continue
+            has_scores = True
+            avg = metrics[key]['avg']
+            mx  = metrics[key]['max']
 
-                bar = QProgressBar()
-                bar.setRange(0, 100)
-                bar.setValue(int(avg * 100))
-                bar.setFixedHeight(8)
-                bar.setTextVisible(False)
-                bar.setStyleSheet(
-                    f"QProgressBar::chunk {{ background-color: {color}; border-radius: 4px; }}"
-                )
-                row.addWidget(bar, stretch=1)
+            row_widget = QWidget()
+            row_widget.setStyleSheet("background: transparent;")
+            row_v = QVBoxLayout(row_widget)
+            row_v.setContentsMargins(0, 0, 0, 0)
+            row_v.setSpacing(5)
 
-                val_lbl = QLabel(f"avg {avg:.2f}   max {mx:.2f}")
-                val_lbl.setStyleSheet("color: #6c7086; font-size: 11px; min-width: 110px;")
-                val_lbl.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
-                row.addWidget(val_lbl)
-                scores_layout.addLayout(row)
+            lbl_row = QHBoxLayout()
+            lbl_row.setSpacing(0)
+            dot = QLabel()
+            dot.setFixedSize(8, 8)
+            dot.setStyleSheet(f"background: {color}; border-radius: 4px;")
+            lbl_row.addWidget(dot)
+            lbl_row.addSpacing(8)
+            name_lbl = QLabel(label)
+            name_lbl.setFont(QFont('', 12))
+            name_lbl.setStyleSheet(f"color: {TEXT};")
+            lbl_row.addWidget(name_lbl)
+            lbl_row.addStretch()
+            avg_pct = int(avg * 100)
+            val_lbl = QLabel(f"{avg_pct}%  max {mx:.2f}")
+            val_lbl.setStyleSheet(f"color: {MUTED}; font-size: 11px; font-weight: 500;")
+            lbl_row.addWidget(val_lbl)
+            row_v.addLayout(lbl_row)
+
+            bar = QProgressBar()
+            bar.setRange(0, 100)
+            bar.setValue(avg_pct)
+            bar.setTextVisible(False)
+            bar.setStyleSheet(
+                f"QProgressBar {{ background: rgba(177,173,161,0.18); border-radius: 5px; border: none; }}"
+                f"QProgressBar::chunk {{ background-color: {color}; border-radius: 5px; }}"
+            )
+            row_v.addWidget(bar)
+            scores_layout.addWidget(row_widget)
 
         if not has_scores:
             no_data = QLabel("No score data recorded in this session.")
-            no_data.setStyleSheet("color: #6c7086; font-size: 12px;")
+            no_data.setStyleSheet(f"color: {MUTED}; font-size: 12px;")
             scores_layout.addWidget(no_data)
 
         left_layout.addWidget(scores_card)
 
-        # Heart rate chip
+        # Heart rate card
         if 'heart_rate' in metrics:
             hr = metrics['heart_rate']
             hr_card = self._make_card()
             hr_layout = QHBoxLayout(hr_card)
-            hr_layout.setContentsMargins(16, 12, 16, 12)
-            hr_icon = QLabel("❤️  Heart Rate")
-            hr_icon.setFont(QFont("SF Pro Text", 12, QFont.Bold))
-            hr_icon.setStyleSheet("color: #f38ba8;")
-            hr_layout.addWidget(hr_icon)
+            hr_layout.setContentsMargins(20, 16, 20, 16)
+
+            hr_left = QVBoxLayout()
+            hr_left.setSpacing(2)
+            hr_title = QLabel("Heart Rate")
+            hr_title.setFont(QFont('', 12, QFont.Bold))
+            hr_title.setStyleSheet("color: #b91c1c;")
+            hr_left.addWidget(hr_title)
+            hr_sub = QLabel("rPPG measurement")
+            hr_sub.setStyleSheet(f"color: {MUTED}; font-size: 11px;")
+            hr_left.addWidget(hr_sub)
+            hr_layout.addLayout(hr_left)
             hr_layout.addStretch()
-            hr_val = QLabel(f"avg {hr.get('avg', 0):.0f} BPM  ·  max {hr.get('max', 0):.0f} BPM")
-            hr_val.setStyleSheet("color: #cdd6f4; font-size: 13px;")
-            hr_layout.addWidget(hr_val)
+
+            hr_right = QVBoxLayout()
+            hr_right.setAlignment(Qt.AlignRight)
+            hr_right.setSpacing(2)
+            avg_lbl = QLabel(f"{hr.get('avg', 0):.0f} BPM avg")
+            avg_lbl.setFont(QFont('', 15, QFont.Bold))
+            avg_lbl.setStyleSheet("color: #b91c1c;")
+            avg_lbl.setAlignment(Qt.AlignRight)
+            hr_right.addWidget(avg_lbl)
+            max_lbl = QLabel(f"peak {hr.get('max', 0):.0f} BPM")
+            max_lbl.setStyleSheet(f"color: {MUTED}; font-size: 11px;")
+            max_lbl.setAlignment(Qt.AlignRight)
+            hr_right.addWidget(max_lbl)
+            hr_layout.addLayout(hr_right)
             left_layout.addWidget(hr_card)
 
-        # ── Manual weight sliders (collapsible) ───────────────────────────
+        # Manual weight sliders (collapsible)
         self._sliders_visible = False
         self._weight_sliders = {}
 
-        toggle_btn = QPushButton("⚙️  Edit detection weights manually")
+        toggle_btn = QPushButton("Edit detection weights manually")
         toggle_btn.setObjectName("toggle")
         toggle_btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        toggle_btn.setCursor(Qt.PointingHandCursor)
         toggle_btn.clicked.connect(self._toggle_sliders)
         left_layout.addWidget(toggle_btn)
 
         self._sliders_card = self._make_card()
         self._sliders_card.setVisible(False)
         sliders_layout = QVBoxLayout(self._sliders_card)
-        sliders_layout.setContentsMargins(16, 14, 16, 14)
-        sliders_layout.setSpacing(12)
+        sliders_layout.setContentsMargins(20, 18, 20, 18)
+        sliders_layout.setSpacing(14)
 
         sliders_hint = QLabel(
             "Drag to adjust how sensitive each signal is. Higher = triggers alerts more easily."
         )
-        sliders_hint.setStyleSheet("color: #6c7086; font-size: 11px;")
+        sliders_hint.setStyleSheet(f"color: {MUTED}; font-size: 11px;")
         sliders_hint.setWordWrap(True)
         sliders_layout.addWidget(sliders_hint)
 
         weight_labels = [
-            ('w_shake',    '🤚  Head shake',     'How strongly head tremors trigger convulsive alerts'),
-            ('w_blink',    '👁  Blinking',        'Sensitivity to abnormal rapid or absent blinking'),
-            ('w_twitch',   '⚡  Twitching',       'How much facial twitches contribute to alerts'),
-            ('w_asym',     '↔️  Face asymmetry',  'Sensitivity to one-sided facial drooping'),
-            ('w_freeze',   '🧊  Face freeze',     'How long a still face triggers a non-convulsive alert'),
-            ('w_bpm',      '❤️  Heart rate',      'Contribution of elevated heart rate to alerts'),
-            ('w_color',    '🎨  Face color',      'Sensitivity to skin color changes (pallor/flushing)'),
-            ('w_blink_nc', '👁  Blink (non-conv)','Blinking weight for non-convulsive risk score'),
-            ('w_bpm_nc',   '❤️  BPM (non-conv)', 'Heart rate weight for non-convulsive risk score'),
+            ('w_shake',    'Head shake',        'How strongly head tremors trigger convulsive alerts'),
+            ('w_blink',    'Blinking',           'Sensitivity to abnormal rapid or absent blinking'),
+            ('w_twitch',   'Twitching',          'How much facial twitches contribute to alerts'),
+            ('w_asym',     'Face asymmetry',     'Sensitivity to one-sided facial drooping'),
+            ('w_freeze',   'Face freeze',        'How long a still face triggers a non-convulsive alert'),
+            ('w_bpm',      'Heart rate',         'Contribution of elevated heart rate to alerts'),
+            ('w_color',    'Face color',         'Sensitivity to skin color changes (pallor/flushing)'),
+            ('w_blink_nc', 'Blink (non-conv)',   'Blinking weight for non-convulsive risk score'),
+            ('w_bpm_nc',   'BPM (non-conv)',     'Heart rate weight for non-convulsive risk score'),
         ]
 
         for wkey, label, description in weight_labels:
             current_val = self.current_weights.get(wkey, 0.3)
-
             row_widget = QWidget()
             row_widget.setStyleSheet("background: transparent;")
             row_layout = QVBoxLayout(row_widget)
@@ -554,22 +642,22 @@ class SessionReviewWindow(QMainWindow):
 
             top_row = QHBoxLayout()
             lbl = QLabel(label)
-            lbl.setFont(QFont("SF Pro Text", 12, QFont.Bold))
-            lbl.setStyleSheet("color: #cdd6f4;")
+            lbl.setFont(QFont('', 12, QFont.Bold))
+            lbl.setStyleSheet(f"color: {TEXT};")
             top_row.addWidget(lbl)
             top_row.addStretch()
             val_lbl = QLabel(f"{current_val:.2f}")
-            val_lbl.setStyleSheet("color: #89b4fa; font-size: 12px; font-weight: bold; min-width: 36px;")
+            val_lbl.setStyleSheet(f"color: {ACCENT}; font-size: 12px; font-weight: bold; min-width: 36px;")
             val_lbl.setAlignment(Qt.AlignRight)
             top_row.addWidget(val_lbl)
             row_layout.addLayout(top_row)
 
             desc_lbl = QLabel(description)
-            desc_lbl.setStyleSheet("color: #6c7086; font-size: 11px;")
+            desc_lbl.setStyleSheet(f"color: {MUTED}; font-size: 11px;")
             row_layout.addWidget(desc_lbl)
 
             slider = QSlider(Qt.Horizontal)
-            slider.setRange(5, 80)   # maps to 0.05 – 0.80
+            slider.setRange(5, 80)
             slider.setValue(int(current_val * 100))
             slider.valueChanged.connect(lambda v, l=val_lbl: l.setText(f"{v/100:.2f}"))
             row_layout.addWidget(slider)
@@ -577,13 +665,10 @@ class SessionReviewWindow(QMainWindow):
             self._weight_sliders[wkey] = slider
             sliders_layout.addWidget(row_widget)
 
-        apply_btn = QPushButton("Save manual weights")
-        apply_btn.setMinimumHeight(40)
-        apply_btn.setStyleSheet(
-            "QPushButton { background-color: #cba6f7; color: #1e1e2e; border-radius: 8px;"
-            "font-size: 13px; font-weight: bold; border: none; padding: 8px 16px; }"
-            "QPushButton:hover { background-color: #b4befe; }"
-        )
+        apply_btn = QPushButton("Save weights")
+        apply_btn.setObjectName("primary")
+        apply_btn.setMinimumHeight(42)
+        apply_btn.setCursor(Qt.PointingHandCursor)
         apply_btn.clicked.connect(self._apply_manual_weights)
         sliders_layout.addWidget(apply_btn)
 
@@ -594,21 +679,21 @@ class SessionReviewWindow(QMainWindow):
 
         # ── Right panel — chat ────────────────────────────────────────────
         right = QWidget()
-        right.setStyleSheet("background-color: #181825;")
+        right.setStyleSheet(f"background-color: {BG};")
         right_layout = QVBoxLayout(right)
-        right_layout.setContentsMargins(16, 24, 24, 24)
-        right_layout.setSpacing(12)
+        right_layout.setContentsMargins(18, 28, 28, 28)
+        right_layout.setSpacing(14)
 
-        chat_title = QLabel("💬  Adaptive Calibration")
-        chat_title.setFont(QFont("SF Pro Display", 15, QFont.Bold))
-        right_layout.addWidget(chat_title)
+        right_layout.addWidget(self._section_label("Adaptive Calibration"))
 
-        chat_hint = QLabel("Answer Gemini's questions to improve future detection accuracy.")
-        chat_hint.setStyleSheet("color: #6c7086; font-size: 12px;")
+        chat_hint = QLabel("Answer the questions below to improve future detection accuracy.")
+        chat_hint.setStyleSheet(f"color: {MUTED}; font-size: 12px;")
         right_layout.addWidget(chat_hint)
+        right_layout.addSpacing(2)
 
         self.chat_scroll = QScrollArea()
         self.chat_scroll.setWidgetResizable(True)
+        self.chat_scroll.setStyleSheet("background: transparent;")
         self.chat_messages_widget = QWidget()
         self.chat_messages_widget.setStyleSheet("background: transparent;")
         self.chat_messages_layout = QVBoxLayout(self.chat_messages_widget)
@@ -617,7 +702,7 @@ class SessionReviewWindow(QMainWindow):
         self.chat_scroll.setWidget(self.chat_messages_widget)
         right_layout.addWidget(self.chat_scroll, stretch=1)
 
-        # input + send button side by side
+        # Input row
         input_container = QWidget()
         input_container.setStyleSheet("background: transparent;")
         input_h = QHBoxLayout(input_container)
@@ -628,78 +713,63 @@ class SessionReviewWindow(QMainWindow):
         self.chat_input.setPlaceholderText("Type your answer… (Enter to send, Shift+Enter for new line)")
         self.chat_input.setFixedHeight(60)
         self.chat_input.setStyleSheet(
-            "background-color: #313244; border: 1px solid #45475a;"
-            "border-radius: 8px; padding: 8px; font-size: 13px; color: #cdd6f4;"
+            f"background-color: {CARD}; border: 1.5px solid rgba(177,173,161,0.45);"
+            "border-radius: 12px; padding: 8px 12px; font-size: 13px;"
         )
         self.chat_input.enter_pressed.connect(self._on_send)
         input_h.addWidget(self.chat_input, stretch=1)
 
         self.send_btn = QPushButton("Send")
-        self.send_btn.setFixedSize(90, 60)
-        self.send_btn.setStyleSheet(
-            "QPushButton { background-color: #89b4fa; color: #1e1e2e; border-radius: 8px;"
-            "font-size: 14px; font-weight: bold; border: none; }"
-            "QPushButton:hover { background-color: #b4befe; }"
-            "QPushButton:disabled { background-color: #45475a; color: #6c7086; }"
-        )
+        self.send_btn.setFixedSize(80, 60)
+        self.send_btn.setObjectName("primary")
+        self.send_btn.setCursor(Qt.PointingHandCursor)
         self.send_btn.clicked.connect(self._on_send)
         input_h.addWidget(self.send_btn)
         right_layout.addWidget(input_container)
 
-        self.save_btn = QPushButton("💾  Save Updated Weights")
+        self.save_btn = QPushButton("Save Updated Weights")
+        self.save_btn.setObjectName("save")
         self.save_btn.setMinimumHeight(44)
-        self.save_btn.setStyleSheet(
-            "QPushButton { background-color: #a6e3a1; color: #1e1e2e; border-radius: 8px;"
-            "font-size: 13px; font-weight: bold; border: none; padding: 10px; }"
-            "QPushButton:hover { background-color: #94e2d5; }"
-            "QPushButton:disabled { background-color: #45475a; color: #6c7086; }"
-        )
+        self.save_btn.setCursor(Qt.PointingHandCursor)
         self.save_btn.setVisible(False)
         self.save_btn.clicked.connect(self._on_save_weights)
         right_layout.addWidget(self.save_btn)
 
         splitter.addWidget(right)
-        splitter.setSizes([560, 560])
+        splitter.setSizes([580, 580])
 
     # ── Helpers ───────────────────────────────────────────────────────────
 
-    def _start_new_session(self):
-        import subprocess, sys, os
-        script = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'main.py')
-        subprocess.Popen([sys.executable, script])
-        self.close()
-
-    def _toggle_sliders(self):
-        self._sliders_visible = not self._sliders_visible
-        self._sliders_card.setVisible(self._sliders_visible)
-
-    def _apply_manual_weights(self):
-        new_weights = {k: round(s.value() / 100, 2) for k, s in self._weight_sliders.items()}
-        self.current_weights.update(new_weights)
-        if self.on_weights_saved:
-            self.on_weights_saved(self.current_weights)
-        # confirm in chat panel
-        self._add_bubble("I've manually updated the detection weights.", "user")
-        self._add_bubble(
-            "✅ Manual weights saved! I'll use these as the baseline if you continue the conversation.",
-            "ai"
-        )
-        self.chat_history.append({
-            "role": "user",
-            "content": f"The caregiver manually set these weights: {json.dumps(new_weights)}. "
-                       "Acknowledge and ask if they'd like to continue refining through conversation."
-        })
+    def _section_label(self, text):
+        # Widget composition avoids Qt's CSS border-left text-clipping bug
+        w = QWidget()
+        w.setStyleSheet("background: transparent;")
+        row = QHBoxLayout(w)
+        row.setContentsMargins(0, 4, 0, 4)
+        row.setSpacing(8)
+        bar = QWidget()
+        bar.setFixedSize(3, 14)
+        bar.setStyleSheet(f"background: {ACCENT}; border-radius: 1px;")
+        row.addWidget(bar, alignment=Qt.AlignVCenter)
+        lbl = QLabel(text.upper())
+        lbl.setFont(QFont('', 10, QFont.Bold))
+        lbl.setStyleSheet(f"color: {MUTED}; letter-spacing: 0.8px; background: transparent;")
+        row.addWidget(lbl)
+        row.addStretch()
+        return w
 
     def _make_card(self):
         card = QFrame()
         card.setObjectName("card")
         return card
 
-    def _info_chip(self, text):
+    def _info_chip(self, icon_type, text):
         lbl = QLabel(text)
+        lbl.setFont(QFont('', 12))
         lbl.setStyleSheet(
-            "background: #313244; color: #a6adc8; border-radius: 8px;"
-            "padding: 4px 12px; font-size: 12px;"
+            f"background: {CARD}; color: {TEXT};"
+            "border-radius: 20px; padding: 5px 14px;"
+            f"border: 1px solid rgba(177,173,161,0.4);"
         )
         return lbl
 
@@ -710,13 +780,13 @@ class SessionReviewWindow(QMainWindow):
         if role == "user":
             bubble = QLabel(text)
             bubble.setWordWrap(True)
-            bubble.setFont(QFont("SF Pro Text", 13))
+            bubble.setFont(QFont('', 13))
             bubble.setMaximumWidth(360)
             bubble.setTextInteractionFlags(Qt.TextSelectableByMouse)
             bubble.setStyleSheet(
-                "background-color: #89b4fa; color: #1e1e2e;"
-                "border-radius: 14px; border-bottom-right-radius: 2px;"
-                "padding: 10px 14px;"
+                f"background: qlineargradient(x1:0,y1:0,x2:1,y2:0,stop:0 {ACCENT},stop:1 {ACCENT2});"
+                "color: #ffffff; border-radius: 16px; border-bottom-right-radius: 3px;"
+                "padding: 10px 16px;"
             )
             row.addStretch()
             row.addWidget(bubble)
@@ -727,36 +797,34 @@ class SessionReviewWindow(QMainWindow):
                 <html><head><style>
                 body {{
                     background: transparent;
-                    color: #cdd6f4;
-                    font-family: -apple-system, 'SF Pro Text', 'Segoe UI', sans-serif;
+                    color: #1c1917;
+                    font-family: 'SF Pro Text', 'Segoe UI', sans-serif;
                     font-size: 13px;
                     line-height: 1.65;
                     margin: 0; padding: 0;
                 }}
-                h1,h2,h3 {{ color: #89b4fa; margin: 8px 0 4px 0; font-size: 14px; }}
-                strong {{ color: #cba6f7; }}
-                em {{ color: #f5c2e7; }}
+                h1,h2,h3 {{ color: #c15f3c; margin: 8px 0 4px 0; font-size: 14px; }}
+                strong {{ color: #7e22ce; }}
                 ul,ol {{ padding-left: 18px; margin: 4px 0; }}
                 li {{ margin-bottom: 2px; }}
                 p {{ margin: 0 0 8px 0; }}
-                code {{ background: #45475a; color: #a6e3a1; padding: 1px 5px;
-                        border-radius: 4px; font-family: monospace; font-size: 12px; }}
+                code {{ background: #f4f3ee; border: 1px solid rgba(177,173,161,0.3);
+                        color: #b91c1c; padding: 1px 5px; border-radius: 4px;
+                        font-family: monospace; font-size: 12px; }}
                 </style></head>
                 <body>{html_content}</body></html>
             """)
             bubble.setReadOnly(True)
             bubble.setFrameShape(QTextBrowser.NoFrame)
-            bubble.setMaximumWidth(420)
+            bubble.setMaximumWidth(440)
             bubble.setMinimumWidth(200)
             bubble.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
             bubble.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
             bubble.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
             bubble.setStyleSheet(
-                "background-color: #313244; border-radius: 14px;"
-                "border-bottom-left-radius: 2px; padding: 10px 14px;"
-                "border: none;"
+                f"background-color: {CARD}; border-radius: 16px; border-bottom-left-radius: 3px;"
+                "padding: 10px 14px; border: 1px solid rgba(177,173,161,0.25);"
             )
-            # size to content — recompute after layout settles
             def _resize_bubble(b=bubble):
                 b.document().setTextWidth(b.viewport().width())
                 h = int(b.document().size().height()) + 28
@@ -780,11 +848,11 @@ class SessionReviewWindow(QMainWindow):
         if thinking:
             self._thinking_bubble = QLabel("Thinking...")
             self._thinking_bubble.setStyleSheet(
-                "background-color: #313244; color: #6c7086;"
-                "border-radius: 14px; border-bottom-left-radius: 2px;"
+                f"background-color: {CARD}; border: 1px solid rgba(177,173,161,0.3);"
+                "color: #8a847a; border-radius: 16px; border-bottom-left-radius: 3px;"
                 "padding: 10px 16px; font-size: 13px; font-style: italic;"
             )
-            self._thinking_bubble.setFixedWidth(120)
+            self._thinking_bubble.setFixedWidth(130)
             row = QHBoxLayout()
             row.addWidget(self._thinking_bubble)
             row.addStretch()
@@ -796,7 +864,6 @@ class SessionReviewWindow(QMainWindow):
             QTimer.singleShot(60, lambda: self.chat_scroll.verticalScrollBar().setValue(
                 self.chat_scroll.verticalScrollBar().maximum()
             ))
-            # animate dots
             self._dot_state = 0
             self._dot_timer = QTimer()
             self._dot_timer.timeout.connect(self._animate_dots)
@@ -848,7 +915,6 @@ class SessionReviewWindow(QMainWindow):
         if match:
             try:
                 parsed = json.loads(match.group(1))
-                # only treat as a weight update if it contains known weight keys
                 valid = {
                     k: round(max(0.05, min(0.80, float(v))), 3)
                     for k, v in parsed.items()
@@ -859,7 +925,7 @@ class SessionReviewWindow(QMainWindow):
                     self.save_btn.setVisible(True)
                     display_text = re.sub(
                         r"```json.*?```",
-                        "✅ Weight update ready — click 'Save Updated Weights' below to apply.",
+                        "Weight update ready — click 'Save Updated Weights' below to apply.",
                         text, flags=re.DOTALL
                     )
             except Exception:
@@ -871,15 +937,13 @@ class SessionReviewWindow(QMainWindow):
         if self.pending_weights and self.on_weights_saved:
             self.current_weights.update(self.pending_weights)
             self.on_weights_saved(self.current_weights)
-            # update sliders to reflect new values
             for k, slider in self._weight_sliders.items():
                 if k in self.current_weights:
                     slider.blockSignals(True)
                     slider.setValue(int(self.current_weights[k] * 100))
                     slider.blockSignals(False)
-            self.save_btn.setText("✅  Weights saved!")
+            self.save_btn.setText("Weights saved!")
             self.save_btn.setEnabled(False)
-            # let the conversation continue
             self.chat_history.append({
                 "role": "user",
                 "content": "The weights have been saved. Continue helping me calibrate if needed."
@@ -887,7 +951,33 @@ class SessionReviewWindow(QMainWindow):
             QTimer.singleShot(800, self._re_enable_save)
 
     def _re_enable_save(self):
-        self.save_btn.setText("💾  Save Updated Weights")
+        self.save_btn.setText("Save Updated Weights")
         self.save_btn.setEnabled(True)
         self.save_btn.setVisible(False)
         self.pending_weights = None
+
+    def _start_new_session(self):
+        import subprocess, os
+        script = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'main.py')
+        subprocess.Popen([sys.executable, os.path.normpath(script)])
+        self.close()
+
+    def _toggle_sliders(self):
+        self._sliders_visible = not self._sliders_visible
+        self._sliders_card.setVisible(self._sliders_visible)
+
+    def _apply_manual_weights(self):
+        new_weights = {k: round(s.value() / 100, 2) for k, s in self._weight_sliders.items()}
+        self.current_weights.update(new_weights)
+        if self.on_weights_saved:
+            self.on_weights_saved(self.current_weights)
+        self._add_bubble("I've manually updated the detection weights.", "user")
+        self._add_bubble(
+            "Weights saved! I'll use these as the baseline if you continue the conversation.",
+            "ai"
+        )
+        self.chat_history.append({
+            "role": "user",
+            "content": f"The caregiver manually set these weights: {json.dumps(new_weights)}. "
+                       "Acknowledge and ask if they'd like to continue refining through conversation."
+        })

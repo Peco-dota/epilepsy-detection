@@ -16,26 +16,16 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt, QThread, Signal, QTimer, QPropertyAnimation, QEasingCurve
 from PySide6.QtGui import QFont
 
-from profile import save_profile, load_profile
-from face_detection import DEFAULT_WEIGHTS, save_weights
+from core.profile import save_profile, load_profile
+from detectors.face_detection import DEFAULT_WEIGHTS, save_weights
 
-# ── Design tokens ──────────────────────────────────────────────────────────────
-BG          = '#f4f3ee'
-SURFACE     = '#e8e5dc'
-CARD        = '#ffffff'
-BORDER      = 'rgba(177,173,161,0.4)'
-TEXT        = '#1c1917'
-MUTED       = '#8a847a'
-ACCENT      = '#c15f3c'
-ACCENT2     = '#d4724e'
-SUCCESS     = '#2e7d32'
-DANGER      = '#b91c1c'
+from ui.theme import BG, SURFACE, CARD, BORDER, TEXT, MUTED, ACCENT, ACCENT2, SUCCESS, DANGER
 
 STYLE = f"""
 QMainWindow, QWidget {{
     background-color: {BG};
     color: {TEXT};
-    font-family: -apple-system, 'SF Pro Text', 'Inter', 'Segoe UI', sans-serif;
+    font-family: 'SF Pro Text', 'Inter', 'Segoe UI', sans-serif;
 }}
 QLabel {{ background: transparent; color: {TEXT}; }}
 QScrollArea {{ border: none; background: transparent; }}
@@ -271,7 +261,7 @@ class _StepBar(QWidget):
             layout.addWidget(indicator)
 
             lbl = QLabel(step)
-            lbl.setFont(QFont('-apple-system', 11, QFont.DemiBold if active else QFont.Normal))
+            lbl.setFont(QFont('', 11, QFont.DemiBold if active else QFont.Normal))
             lbl.setStyleSheet(
                 f'background: transparent; color: {TEXT};' if active else
                 f'background: transparent; color: {SUCCESS};' if done else
@@ -315,7 +305,7 @@ class _SurveyQuestion(QWidget):
         q_row = QHBoxLayout()
         q_row.setSpacing(10)
         text = QLabel(question.replace('{name}', name or 'the patient'))
-        text.setFont(QFont('-apple-system', 14))
+        text.setFont(QFont('', 14))
         text.setStyleSheet(f'color: {TEXT};')
         text.setWordWrap(True)
         q_row.addWidget(text, stretch=1)
@@ -387,7 +377,7 @@ class SetupWizard(QMainWindow):
 
     def _section_label(self, text: str) -> QLabel:
         lbl = QLabel(text)
-        lbl.setFont(QFont('-apple-system', 12))
+        lbl.setFont(QFont('', 12))
         lbl.setStyleSheet(f'color: {MUTED}; letter-spacing: 0.5px;')
         return lbl
 
@@ -424,7 +414,7 @@ class SetupWizard(QMainWindow):
 
         # Icon — placed directly without a frame to avoid Qt border-radius clipping artifact
         icon_lbl = QLabel('🛡️')
-        icon_lbl.setFont(QFont('-apple-system', 64))
+        icon_lbl.setFont(QFont('', 64))
         icon_lbl.setAlignment(Qt.AlignCenter)
         icon_lbl.setStyleSheet('background: transparent;')
         icon_lbl.setFixedHeight(80)
@@ -432,14 +422,14 @@ class SetupWizard(QMainWindow):
         layout.addSpacing(16)
 
         title = QLabel('Welcome to EpiGuard')
-        title.setFont(QFont('-apple-system', 34, QFont.Bold))
+        title.setFont(QFont('', 34, QFont.Bold))
         title.setStyleSheet(f'background: transparent; color: {TEXT};')
         title.setAlignment(Qt.AlignCenter)
         layout.addWidget(title)
         layout.addSpacing(8)
 
         sub = QLabel("Real-time seizure monitoring, personalised to each patient")
-        sub.setFont(QFont('-apple-system', 14))
+        sub.setFont(QFont('', 14))
         sub.setStyleSheet(f'background: transparent; color: {MUTED};')
         sub.setAlignment(Qt.AlignCenter)
         layout.addWidget(sub)
@@ -506,7 +496,7 @@ class SetupWizard(QMainWindow):
         # Title row + mode toggle
         title_row = QHBoxLayout()
         title = QLabel("Tell us about the episodes")
-        title.setFont(QFont('-apple-system', 24, QFont.Bold))
+        title.setFont(QFont('', 24, QFont.Bold))
         title.setStyleSheet(f'background: transparent; color: {TEXT};')
         title_row.addWidget(title)
         title_row.addStretch()
@@ -530,7 +520,7 @@ class SetupWizard(QMainWindow):
             sub = QLabel("Answer the questions below — or switch to AI mode and describe episodes in your own words.")
         else:
             sub = QLabel("Answer as many questions as you can. Skip any that don't apply.")
-        sub.setFont(QFont('-apple-system', 13))
+        sub.setFont(QFont('', 13))
         sub.setStyleSheet(f'background: transparent; color: {MUTED};')
         layout.addWidget(sub)
         layout.addSpacing(14)
@@ -578,7 +568,7 @@ class SetupWizard(QMainWindow):
             "Describe the episodes in your own words — what happens, how long they last, how often they occur.\n"
             "AI will interpret your description and automatically set all detection weights."
         )
-        desc_hint.setFont(QFont('-apple-system', 13))
+        desc_hint.setFont(QFont('', 13))
         desc_hint.setStyleSheet(f'background: transparent; color: {MUTED};')
         desc_hint.setWordWrap(True)
         dp_layout.addWidget(desc_hint)
@@ -601,7 +591,7 @@ class SetupWizard(QMainWindow):
         layout.addSpacing(10)
 
         self._survey_loading = QLabel('')
-        self._survey_loading.setFont(QFont('-apple-system', 12))
+        self._survey_loading.setFont(QFont('', 12))
         self._survey_loading.setStyleSheet(f'background: transparent; color: {ACCENT};')
         self._survey_loading.setAlignment(Qt.AlignCenter)
         self._survey_loading.setVisible(False)
@@ -776,7 +766,7 @@ class SetupWizard(QMainWindow):
 
         # Icon — plain label
         bell_lbl = QLabel('📲')
-        bell_lbl.setFont(QFont('-apple-system', 56))
+        bell_lbl.setFont(QFont('', 56))
         bell_lbl.setAlignment(Qt.AlignCenter)
         bell_lbl.setStyleSheet('background: transparent;')
         bell_lbl.setFixedHeight(72)
@@ -784,14 +774,14 @@ class SetupWizard(QMainWindow):
         layout.addSpacing(14)
 
         title = QLabel('Who should we alert?')
-        title.setFont(QFont('-apple-system', 28, QFont.Bold))
+        title.setFont(QFont('', 28, QFont.Bold))
         title.setStyleSheet(f'background: transparent; color: {TEXT};')
         title.setAlignment(Qt.AlignCenter)
         layout.addWidget(title)
         layout.addSpacing(6)
 
         sub = QLabel("If EpiGuard detects a seizure, we'll send them a text immediately.")
-        sub.setFont(QFont('-apple-system', 13))
+        sub.setFont(QFont('', 13))
         sub.setStyleSheet(f'background: transparent; color: {MUTED};')
         sub.setAlignment(Qt.AlignCenter)
         sub.setWordWrap(True)
@@ -811,7 +801,7 @@ class SetupWizard(QMainWindow):
         layout.addSpacing(8)
 
         hint = QLabel('Include country code  ·  e.g. +1 for US, +44 for UK, +421 for SK')
-        hint.setFont(QFont('-apple-system', 12))
+        hint.setFont(QFont('', 12))
         hint.setStyleSheet(f'color: {MUTED};')
         layout.addWidget(hint)
 
@@ -825,7 +815,7 @@ class SetupWizard(QMainWindow):
             self._sms_btn.clicked.connect(self._send_test_sms)
             sms_row.addWidget(self._sms_btn)
             self._sms_status = QLabel('')
-            self._sms_status.setFont(QFont('-apple-system', 12))
+            self._sms_status.setFont(QFont('', 12))
             self._sms_status.setStyleSheet(f'color: {SUCCESS};')
             sms_row.addWidget(self._sms_status)
             sms_row.addStretch()
@@ -896,7 +886,7 @@ class SetupWizard(QMainWindow):
 
         # Success checkmark — plain label, no frame, avoids clipping artifact
         check_lbl = QLabel('✓')
-        check_lbl.setFont(QFont('-apple-system', 56, QFont.Bold))
+        check_lbl.setFont(QFont('', 56, QFont.Bold))
         check_lbl.setStyleSheet(f'background: transparent; color: {SUCCESS};')
         check_lbl.setAlignment(Qt.AlignCenter)
         check_lbl.setFixedHeight(72)
@@ -904,14 +894,14 @@ class SetupWizard(QMainWindow):
         layout.addSpacing(14)
 
         title = QLabel(f'{self._name()} is now protected')
-        title.setFont(QFont('-apple-system', 28, QFont.Bold))
+        title.setFont(QFont('', 28, QFont.Bold))
         title.setStyleSheet(f'background: transparent; color: {TEXT};')
         title.setAlignment(Qt.AlignCenter)
         layout.addWidget(title)
         layout.addSpacing(4)
 
         sub = QLabel('EpiGuard will monitor these signals during each session')
-        sub.setFont(QFont('-apple-system', 13))
+        sub.setFont(QFont('', 13))
         sub.setStyleSheet(f'background: transparent; color: {MUTED};')
         sub.setAlignment(Qt.AlignCenter)
         layout.addWidget(sub)
@@ -935,7 +925,7 @@ class SetupWizard(QMainWindow):
             row.setSpacing(12)
 
             name_lbl = QLabel(f'{icon}  {label}')
-            name_lbl.setFont(QFont('-apple-system', 13))
+            name_lbl.setFont(QFont('', 13))
             name_lbl.setStyleSheet(f'color: {TEXT};')
             name_lbl.setFixedWidth(180)
             row.addWidget(name_lbl)
@@ -952,7 +942,7 @@ class SetupWizard(QMainWindow):
 
             level_text = 'Low' if wv < 0.30 else ('Medium' if wv < 0.55 else 'High')
             lvl = QLabel(level_text)
-            lvl.setFont(QFont('-apple-system', 11))
+            lvl.setFont(QFont('', 11))
             lvl.setFixedWidth(46)
             lvl.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
             lvl.setStyleSheet(f'color: {color}; font-weight: 600;')
@@ -963,7 +953,7 @@ class SetupWizard(QMainWindow):
         rest = len(self._weights) - 5
         if rest > 0:
             more_lbl = QLabel(f'+ {rest} more signals at baseline sensitivity')
-            more_lbl.setFont(QFont('-apple-system', 11))
+            more_lbl.setFont(QFont('', 11))
             more_lbl.setStyleSheet(f'color: {MUTED};')
             more_lbl.setAlignment(Qt.AlignCenter)
             cl.addWidget(more_lbl)
@@ -983,7 +973,7 @@ class SetupWizard(QMainWindow):
             f'Alerts go to {phone}' if phone
             else 'No emergency contact set'
         )
-        contact_lbl.setFont(QFont('-apple-system', 12))
+        contact_lbl.setFont(QFont('', 12))
         contact_lbl.setStyleSheet(f'color: {SUCCESS if phone else MUTED};')
         contact_row.addWidget(contact_lbl)
         contact_row.addStretch()
@@ -1003,7 +993,7 @@ class SetupWizard(QMainWindow):
     def _finish(self):
         now = datetime.now().isoformat()
         if self._patient is not None:
-            import account_store as _as
+            from core import account_store as _as
             self._patient.update({
                 'name': self.profile.get('patient_name', self._patient.get('name', '')),
                 'age': self.profile.get('patient_age', self._patient.get('age', '')),

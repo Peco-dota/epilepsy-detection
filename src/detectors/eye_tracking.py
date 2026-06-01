@@ -1,7 +1,7 @@
 import numpy as np
 import cv2
 from collections import deque
-from mediapipe_indexes import LEFT_IRIS, RIGHT_IRIS
+from core.mediapipe_indexes import LEFT_IRIS, RIGHT_IRIS
 
 class EyeTracking:
     def __init__(self, debug):
