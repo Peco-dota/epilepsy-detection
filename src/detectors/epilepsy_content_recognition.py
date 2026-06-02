@@ -7,17 +7,23 @@ import threading
 import subprocess
 import os
 import sys
+import platform
+import ctypes
+import ctypes.wintypes
 from PySide6.QtWidgets import QApplication, QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QFrame
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QFont
 import json
 from pathlib import Path
-import Quartz
-from Quartz import CGWindowListCopyWindowInfo, CGWindowListCreateImage, CGRectNull
-from Quartz import kCGWindowListOptionOnScreenOnly, kCGWindowListExcludeDesktopElements
-from Quartz import kCGNullWindowID, kCGWindowImageDefault
-import objc
-from AppKit import NSWorkspace, NSApplicationActivateIgnoringOtherApps
+
+_IS_MAC = platform.system() == 'Darwin'
+_IS_WIN = platform.system() == 'Windows'
+
+if _IS_MAC:
+    import Quartz
+    from Quartz import CGWindowListCopyWindowInfo, CGWindowListCreateImage, CGRectNull
+    from Quartz import kCGWindowListOptionOnScreenOnly, kCGWindowListExcludeDesktopElements
+    from Quartz import kCGNullWindowID, kCGWindowImageDefault
 
 
 class EpilepsyContentDetector:
@@ -285,30 +291,74 @@ class EpilepsyProtector:
         self.notification_dialog = None
 
     def get_frontmost_app(self):
+        if _IS_MAC:
+            return self._get_frontmost_mac()
+        if _IS_WIN:
+            return self._get_frontmost_windows()
+        return None
+
+    def _get_frontmost_mac(self):
         window_list = CGWindowListCopyWindowInfo(
             kCGWindowListOptionOnScreenOnly | kCGWindowListExcludeDesktopElements,
             kCGNullWindowID
         )
+        skip = {'Python', 'python', 'Finder', 'Dock', 'SystemUIServer',
+                'Control Center', 'Notification Center'}
         for win in window_list:
             owner = win.get('kCGWindowOwnerName', '')
-            layer = win.get('kCGWindowLayer', 0)
-            if owner and owner not in ['Python', 'python', 'Finder', 'Dock',
-                                        'SystemUIServer', 'Control Center', 'Notification Center']:
-                if layer == 0:
-                    return {
-                        'name': owner,
-                        'window_name': win.get('kCGWindowName', ''),
-                        'pid': win.get('kCGWindowOwnerPID'),
-                        'bounds': win.get('kCGWindowBounds', {})
-                    }
+            if owner and owner not in skip and win.get('kCGWindowLayer', 0) == 0:
+                return {
+                    'name': owner,
+                    'window_name': win.get('kCGWindowName', ''),
+                    'pid': win.get('kCGWindowOwnerPID'),
+                }
         return None
+
+    def _get_frontmost_windows(self):
+        try:
+            hwnd = ctypes.windll.user32.GetForegroundWindow()
+            if not hwnd:
+                return None
+            length = ctypes.windll.user32.GetWindowTextLengthW(hwnd)
+            buf = ctypes.create_unicode_buffer(length + 1)
+            ctypes.windll.user32.GetWindowTextW(hwnd, buf, length + 1)
+            title = buf.value
+            if not title:
+                return None
+            pid = ctypes.wintypes.DWORD()
+            ctypes.windll.user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+            exe = ''
+            try:
+                handle = ctypes.windll.kernel32.OpenProcess(0x0410, False, pid.value)
+                if handle:
+                    buf2 = ctypes.create_unicode_buffer(260)
+                    ctypes.windll.psapi.GetModuleFileNameExW(handle, None, buf2, 260)
+                    ctypes.windll.kernel32.CloseHandle(handle)
+                    exe = buf2.value.split('\\')[-1] if buf2.value else ''
+            except Exception:
+                pass
+            skip = {'python.exe', 'pythonw.exe', 'cursor.exe', 'code.exe',
+                    'explorer.exe', 'taskmgr.exe'}
+            if exe.lower() in skip:
+                return None
+            return {'name': exe or title, 'window_name': title, 'hwnd': hwnd}
+        except Exception:
+            return None
 
     def hide_app(self, app_info):
         if not app_info:
             return False
         try:
-            script = f'tell application "System Events" to set visible of process "{app_info["name"]}" to false'
-            subprocess.run(['osascript', '-e', script], capture_output=True, timeout=2)
+            if _IS_MAC:
+                script = (f'tell application "System Events" to '
+                          f'set visible of process "{app_info["name"]}" to false')
+                subprocess.run(['osascript', '-e', script], capture_output=True, timeout=2)
+            elif _IS_WIN:
+                hwnd = app_info.get('hwnd')
+                if hwnd:
+                    ctypes.windll.user32.ShowWindow(hwnd, 6)  # SW_MINIMIZE
+                else:
+                    return False
             self.blocked_apps.add(app_info['name'])
             return True
         except Exception:
@@ -415,11 +465,12 @@ class ScreenMonitor:
         self.verbose = verbose
         self.detector = EpilepsyContentDetector(fps=fps)
         self.app = QApplication.instance() or QApplication(sys.argv)
-        try:
-            from AppKit import NSApp, NSApplicationActivationPolicyAccessory
-            NSApp.setActivationPolicy_(NSApplicationActivationPolicyAccessory)
-        except Exception:
-            pass
+        if _IS_MAC:
+            try:
+                from AppKit import NSApp, NSApplicationActivationPolicyAccessory
+                NSApp.setActivationPolicy_(NSApplicationActivationPolicyAccessory)
+            except Exception:
+                pass
         self.protector = EpilepsyProtector(self.app, fps=fps)
         self.is_running = True
         self.monitor_rect = None
@@ -461,10 +512,12 @@ class ScreenMonitor:
             return frame_small
 
     def capture_screen(self):
-        try:
-            return self.capture_screen_quartz()
-        except Exception:
-            return self.capture_screen_mss()
+        if _IS_MAC:
+            try:
+                return self.capture_screen_quartz()
+            except Exception:
+                pass
+        return self.capture_screen_mss()
 
     def monitor_loop(self):
         interval = 1.0 / self.fps
