@@ -5,7 +5,7 @@ Updated by FaceDetection every frame via update_metrics().
 import cv2
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QFrame, QScrollArea,
-    QProgressBar, QGridLayout,
+    QProgressBar, QGridLayout, QPushButton,
 )
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QFont, QImage, QPixmap
@@ -59,10 +59,14 @@ class _MetricRow(QWidget):
         self._val.setFixedWidth(42)
         row.addWidget(self._val)
 
-    def set(self, value: float, fmt: str | None = None):
+    def set(self, value: float, fmt: str | None = None, risk_scale: bool = False):
         pct = min(int(value * 100), 100)
         self._bar.setValue(pct)
-        color = _risk_color(value)
+        if risk_scale:
+            # Sharper scale for risk scores: yellow ≥0.5, red ≥0.8 (alert at 1.0)
+            color = SUCCESS if value < 0.5 else (WARN if value < 0.8 else DANGER)
+        else:
+            color = _risk_color(value)
         self._bar.setStyleSheet(
             f"QProgressBar {{ background: rgba(177,173,161,0.2); border-radius: 3px; border: none; }}"
             f"QProgressBar::chunk {{ background: {color}; border-radius: 3px; }}"
@@ -234,15 +238,127 @@ class MonitoringDashboard(QWidget):
     _COLS = 3
     _TW, _TH = 260, 195   # thumbnail size per cell
 
-    def __init__(self, parent=None):
+    def __init__(self, patient_name="", on_stop=None, on_feedback=None, parent=None):
         super().__init__(parent)
+        self._on_stop     = on_stop
+        self._on_feedback = on_feedback
+        self._spin_frames = ["⠋","⠙","⠹","⠸","⠼","⠴","⠦","⠧","⠇","⠏"]
+        self._spin_idx    = 0
+
         self.setWindowTitle("EpiGuard — Live Monitoring")
         self.setWindowFlags(Qt.Window | Qt.WindowStaysOnTopHint)
         self.setStyleSheet(STYLE)
 
-        root = QHBoxLayout(self)
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(0)
+
+        # ── Header bar ────────────────────────────────────────────────────
+        header = QWidget()
+        header.setStyleSheet(f"background: {CARD}; border-bottom: 1px solid {BORDER};")
+        hl = QHBoxLayout(header)
+        hl.setContentsMargins(16, 10, 16, 10)
+        hl.setSpacing(12)
+
+        self._name_lbl = QLabel(f"Monitoring {patient_name}" if patient_name else "Monitoring")
+        self._name_lbl.setFont(QFont('', 13, QFont.Bold))
+        self._name_lbl.setStyleSheet(f"color: {TEXT}; background: transparent; border: none;")
+        hl.addWidget(self._name_lbl)
+
+        self._spinner_lbl = QLabel("⠋  Live")
+        self._spinner_lbl.setFont(QFont('', 12))
+        self._spinner_lbl.setStyleSheet(f"color: {ACCENT}; background: transparent; border: none;")
+        hl.addWidget(self._spinner_lbl)
+        hl.addStretch()
+
+        self._stop_btn = QPushButton("Stop Monitoring")
+        self._stop_btn.setFont(QFont('', 11, QFont.Bold))
+        self._stop_btn.setFixedHeight(32)
+        self._stop_btn.setStyleSheet(
+            f"QPushButton {{ background: {ACCENT}; color: #fff; border-radius: 6px; padding: 0 14px; border: none; }}"
+            f"QPushButton:hover {{ background: #ad5434; }}"
+        )
+        self._stop_btn.setCursor(Qt.PointingHandCursor)
+        self._stop_btn.clicked.connect(self._handle_stop)
+        hl.addWidget(self._stop_btn)
+        outer.addWidget(header)
+
+        # ── Alert strip (hidden by default) ───────────────────────────────
+        self._alert_strip = QWidget()
+        self._alert_strip.setStyleSheet(
+            "background: #fef2f2; border-bottom: 1px solid #fca5a5;"
+        )
+        al = QVBoxLayout(self._alert_strip)
+        al.setContentsMargins(16, 8, 16, 8)
+        al.setSpacing(4)
+
+        row1 = QHBoxLayout(); row1.setSpacing(10)
+        self._alert_title = QLabel("⚠  Seizure Risk Detected")
+        self._alert_title.setFont(QFont('', 12, QFont.Bold))
+        self._alert_title.setStyleSheet("color: #b91c1c; background: transparent; border: none;")
+        self._alert_detail = QLabel("")
+        self._alert_detail.setFont(QFont('', 11))
+        self._alert_detail.setStyleSheet("color: #7f1d1d; background: transparent; border: none;")
+        row1.addWidget(self._alert_title)
+        row1.addWidget(self._alert_detail)
+        row1.addStretch()
+        al.addLayout(row1)
+
+        self._alert_contrib = QLabel("")
+        self._alert_contrib.setFont(QFont('', 10))
+        self._alert_contrib.setStyleSheet("color: #991b1b; background: transparent; border: none;")
+        al.addWidget(self._alert_contrib)
+
+        row2 = QHBoxLayout(); row2.setSpacing(8)
+        self._yes_btn = QPushButton("✓  Real seizure")
+        self._no_btn  = QPushButton("✗  False alarm")
+        self._yes_btn.setFont(QFont('', 11, QFont.Bold))
+        self._no_btn.setFont(QFont('', 11, QFont.Bold))
+        self._yes_btn.setFixedHeight(30)
+        self._no_btn.setFixedHeight(30)
+        self._yes_btn.setStyleSheet(
+            "QPushButton { background:#16a34a; color:white; border-radius:6px; padding:0 12px; border:none; }"
+            "QPushButton:hover { background:#15803d; }"
+        )
+        self._no_btn.setStyleSheet(
+            "QPushButton { background:#6b7280; color:white; border-radius:6px; padding:0 12px; border:none; }"
+            "QPushButton:hover { background:#4b5563; }"
+        )
+        self._yes_btn.setCursor(Qt.PointingHandCursor)
+        self._no_btn.setCursor(Qt.PointingHandCursor)
+        self._yes_btn.clicked.connect(lambda: self._handle_feedback(True))
+        self._no_btn.clicked.connect(lambda: self._handle_feedback(False))
+        row2.addWidget(self._yes_btn); row2.addWidget(self._no_btn); row2.addStretch()
+        al.addLayout(row2)
+
+        self._alert_strip.hide()
+        outer.addWidget(self._alert_strip)
+
+        # ── Pre-ictal strip (hidden by default) ───────────────────────────
+        self._pi_strip = QWidget()
+        self._pi_strip.setStyleSheet(
+            "background: #fffbeb; border-bottom: 1px solid #fcd34d;"
+        )
+        pl = QHBoxLayout(self._pi_strip)
+        pl.setContentsMargins(16, 7, 16, 7)
+        self._pi_lbl = QLabel("")
+        self._pi_lbl.setFont(QFont('', 11, QFont.Bold))
+        self._pi_lbl.setStyleSheet("color: #92400e; background: transparent; border: none;")
+        pl.addWidget(self._pi_lbl)
+        self._pi_strip.hide()
+        outer.addWidget(self._pi_strip)
+
+        # ── Body (camera + metrics) ───────────────────────────────────────
+        body = QWidget()
+        root = QHBoxLayout(body)
         root.setContentsMargins(0, 0, 0, 0)
         root.setSpacing(0)
+        outer.addWidget(body)
+
+        # spinner timer
+        self._timer = QTimer(self)
+        self._timer.timeout.connect(self._tick)
+        self._timer.start(100)
 
         # ── Left: camera feed grid ────────────────────────────────────────
         feeds = QWidget()
@@ -383,8 +499,9 @@ class MonitoringDashboard(QWidget):
         self._twitch.set(data.get('twitch', 0))
         self._color.set(data.get('color', 0))
         self._bpm.set(data.get('bpm', 0))
-        self._conv.set(data.get('conv_risk', 0))
-        self._nc.set(data.get('nc_risk', 0))
+        # Risk rows use a sharper scale: yellow ≥0.5, red ≥0.8 (alert fires at 1.0)
+        self._conv.set(data.get('conv_risk', 0), risk_scale=True)
+        self._nc.set(data.get('nc_risk', 0),     risk_scale=True)
         pi_score = data.get('pi_score', 0)
         self._pi_score.set(pi_score)
         self._pi_stage.setText(f"Stage: {data.get('pi_stage', '—')}")
@@ -392,32 +509,6 @@ class MonitoringDashboard(QWidget):
         self._au_score.set(data.get('audio_score', 0))
         self._au_rms.setText(f"RMS:    {data.get('audio_rms', 0.0):.4f}")
         self._au_groans.setText(f"Groans: {data.get('audio_groans', 0)}")
-
-        # Alert & SMS
-        alert_type    = data.get('alert_type')
-        alert_pending = data.get('alert_pending', False)
-        sms_sent      = data.get('sms_sent', False)
-        sms_configured = data.get('sms_configured', False)
-
-        if alert_pending and alert_type:
-            self._alert_status.setText(f"⚠  {alert_type.title()} alert active — awaiting feedback")
-            self._alert_status.setStyleSheet(f"color: {DANGER}; font-weight: 600;")
-        elif alert_type:
-            self._alert_status.setText(f"✓  {alert_type.title()} alert — feedback received")
-            self._alert_status.setStyleSheet(f"color: {SUCCESS}; font-weight: 600;")
-        else:
-            self._alert_status.setText("No alert triggered")
-            self._alert_status.setStyleSheet(f"color: {MUTED};")
-
-        if not sms_configured:
-            self._sms_status.setText("SMS: not configured")
-            self._sms_status.setStyleSheet(f"color: {MUTED};")
-        elif sms_sent:
-            self._sms_status.setText("SMS: sent ✓")
-            self._sms_status.setStyleSheet(f"color: {SUCCESS}; font-weight: 600;")
-        else:
-            self._sms_status.setText("SMS: configured — not yet sent")
-            self._sms_status.setStyleSheet(f"color: {MUTED};")
 
         for key, lbl in self._weight_labels.items():
             v = data.get('weights', {}).get(key)
@@ -436,6 +527,46 @@ class MonitoringDashboard(QWidget):
                 self._TW, self._TH, Qt.KeepAspectRatio, Qt.SmoothTransformation,
             )
             img_lbl.setPixmap(pix)
+
+    # ── Alert / pre-ictal public API (mirrors MonitoringStatusWindow) ─────
+
+    def show_alert(self, alert_type: str, sms_sent: bool,
+                   contributors: list | None = None):
+        self._alert_detail.setText(
+            f"{alert_type.title()} · {'SMS sent' if sms_sent else 'SMS not configured'}"
+        )
+        if contributors:
+            self._alert_contrib.setText(
+                "  ·  ".join(f"{lbl} {pct}%" for lbl, pct in contributors)
+            )
+            self._alert_contrib.show()
+        else:
+            self._alert_contrib.hide()
+        self._alert_strip.show()
+
+    def show_pre_ictal_warning(self, stage_label: str):
+        self._pi_lbl.setText(f"⚠  Pre-ictal warning · {stage_label}")
+        self._pi_strip.show()
+
+    def clear_pre_ictal_warning(self):
+        self._pi_strip.hide()
+
+    # ── Private ───────────────────────────────────────────────────────────
+
+    def _tick(self):
+        self._spin_idx = (self._spin_idx + 1) % len(self._spin_frames)
+        self._spinner_lbl.setText(f"{self._spin_frames[self._spin_idx]}  Live")
+
+    def _handle_stop(self):
+        self._stop_btn.setText("Stopping…")
+        self._stop_btn.setEnabled(False)
+        if self._on_stop:
+            self._on_stop()
+
+    def _handle_feedback(self, correct: bool):
+        self._alert_strip.hide()
+        if self._on_feedback:
+            self._on_feedback(correct)
 
 
 class DetectorViewsWindow(QWidget):

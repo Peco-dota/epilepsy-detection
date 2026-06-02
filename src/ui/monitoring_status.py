@@ -72,12 +72,19 @@ class MonitoringStatusWindow(QWidget):
 
         self._alert_sms = QLabel("")
         self._alert_sms.setFont(QFont('', 10))
-        self._alert_sms.setStyleSheet("color: #b91c1c; opacity: 0.7;")
+        self._alert_sms.setStyleSheet("color: #b91c1c;")
         self._alert_sms.setAlignment(Qt.AlignCenter)
+
+        self._alert_contrib = QLabel("")
+        self._alert_contrib.setFont(QFont('', 10))
+        self._alert_contrib.setStyleSheet("color: #7f1d1d;")
+        self._alert_contrib.setAlignment(Qt.AlignCenter)
+        self._alert_contrib.setWordWrap(True)
 
         ac.addWidget(self._alert_title)
         ac.addWidget(self._alert_type)
         ac.addWidget(self._alert_sms)
+        ac.addWidget(self._alert_contrib)
         self._alert_card.hide()
         self._layout.addWidget(self._alert_card)
 
@@ -136,9 +143,16 @@ class MonitoringStatusWindow(QWidget):
         self._pi_banner.hide()
         self.adjustSize()
 
-    def show_alert(self, alert_type: str, sms_sent: bool):
-        self._alert_type.setText(f"{alert_type.title()} type")
+    def show_alert(self, alert_type: str, sms_sent: bool,
+                   contributors: list | None = None):
+        self._alert_type.setText(f"{alert_type.title()} seizure risk")
         self._alert_sms.setText("SMS alert sent" if sms_sent else "SMS not configured")
+        if contributors:
+            lines = "  ·  ".join(f"{lbl} {pct}%" for lbl, pct in contributors)
+            self._alert_contrib.setText(lines)
+            self._alert_contrib.show()
+        else:
+            self._alert_contrib.hide()
         self._alert_card.show()
         self._yes_btn.show()
         self._no_btn.show()
@@ -158,6 +172,7 @@ class MonitoringStatusWindow(QWidget):
 
     def _on_feedback(self, correct: bool):
         self._alert_card.hide()
+        self._alert_contrib.hide()
         self._yes_btn.hide()
         self._no_btn.hide()
         self.adjustSize()

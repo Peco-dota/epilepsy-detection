@@ -340,7 +340,11 @@ class FaceDetection:
         if self.debug_overlay:
             try:
                 from ui.debug_window import MonitoringDashboard
-                self.dashboard = MonitoringDashboard()
+                self.dashboard = MonitoringDashboard(
+                    patient_name=self.patient_name,
+                    on_stop=self.stop_monitoring,
+                    on_feedback=self._apply_feedback,
+                )
                 self.dashboard.show()
             except Exception as e:
                 print("Could not launch monitoring dashboard", e)
@@ -540,15 +544,20 @@ class FaceDetection:
                     'color': self.color, 'asym': self.asym, 'freeze': self.freeze,
                     'twitch': self.twitch, 'eye': self.eye,
                 }
-                if self.status_window:
-                    self.status_window.show_alert(alert_type, self.sms_sent)
+                _alert_target = self.dashboard if self.dashboard else self.status_window
+                if _alert_target:
+                    _alert_target.show_alert(
+                        alert_type, self.sms_sent,
+                        self._top_contributors(alert_type, audio_score),
+                    )
 
-            if self.status_window:
+            _pi_target = self.dashboard if self.dashboard else self.status_window
+            if _pi_target:
                 if pi['warning'] and not self._pi_warning_shown:
-                    self.status_window.show_pre_ictal_warning(pi.get('stage_label', '—'))
+                    _pi_target.show_pre_ictal_warning(pi.get('stage_label', '—'))
                     self._pi_warning_shown = True
                 elif not pi['warning'] and self._pi_warning_shown:
-                    self.status_window.clear_pre_ictal_warning()
+                    _pi_target.clear_pre_ictal_warning()
                     self._pi_warning_shown = False
 
             if self.frame_index % 150 == 0:
@@ -734,6 +743,36 @@ class FaceDetection:
                 app = QApplication.instance()
                 if app: app.processEvents()
                 cv2.waitKey(1)
+
+    def _top_contributors(self, alert_type: str, audio_score: float) -> list[tuple[str, int]]:
+        """Return top 3 (signal_label, pct) pairs for the current alert type."""
+        w = self.weights
+        _LABELS = {
+            'shake': 'Head shaking', 'blink': 'Blink rate', 'bpm': 'Heart rate',
+            'color': 'Skin color', 'asym': 'Face asymmetry', 'freeze': 'Face freeze',
+            'twitch': 'Twitching', 'audio': 'Audio / sounds',
+        }
+        if alert_type == 'convulsive':
+            contribs = {
+                'shake': w['w_shake']  * self.shake,
+                'blink': w['w_blink']  * self.blink,
+                'bpm':   w['w_bpm']    * self.bpm,
+                'color': w['w_color']  * self.color,
+                'audio': w.get('w_audio', 0.25) * audio_score,
+            }
+        else:
+            contribs = {
+                'asym':   w['w_asym']    * self.asym,
+                'freeze': w['w_freeze']  * self.freeze,
+                'twitch': w['w_twitch']  * self.twitch,
+                'blink':  w['w_blink_nc'] * self.blink,
+                'bpm':    w['w_bpm_nc']  * self.bpm,
+                'color':  w['w_color']   * self.color,
+                'audio':  w.get('w_audio', 0.25) * audio_score,
+            }
+        total = sum(contribs.values()) or 1.0
+        ranked = sorted(contribs.items(), key=lambda x: x[1], reverse=True)[:3]
+        return [(_LABELS[k], round(v / total * 100)) for k, v in ranked if v > 0]
 
     def _apply_feedback(self, correct):
         scores = self.alert_scores_snapshot
