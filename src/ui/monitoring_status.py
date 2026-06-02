@@ -81,10 +81,16 @@ class MonitoringStatusWindow(QWidget):
         self._alert_contrib.setAlignment(Qt.AlignCenter)
         self._alert_contrib.setWordWrap(True)
 
+        self._countdown_lbl = QLabel("")
+        self._countdown_lbl.setFont(QFont('', 10, QFont.Bold))
+        self._countdown_lbl.setStyleSheet("color: #b91c1c;")
+        self._countdown_lbl.setAlignment(Qt.AlignCenter)
+
         ac.addWidget(self._alert_title)
         ac.addWidget(self._alert_type)
         ac.addWidget(self._alert_sms)
         ac.addWidget(self._alert_contrib)
+        ac.addWidget(self._countdown_lbl)
         self._alert_card.hide()
         self._layout.addWidget(self._alert_card)
 
@@ -146,16 +152,27 @@ class MonitoringStatusWindow(QWidget):
     def show_alert(self, alert_type: str, sms_sent: bool,
                    contributors: list | None = None):
         self._alert_type.setText(f"{alert_type.title()} seizure risk")
-        self._alert_sms.setText("SMS alert sent" if sms_sent else "SMS not configured")
+        self._alert_sms.setText("SMS alert sent ✓" if sms_sent else "Waiting for response...")
         if contributors:
             lines = "  ·  ".join(f"{lbl} {pct}%" for lbl, pct in contributors)
             self._alert_contrib.setText(lines)
             self._alert_contrib.show()
         else:
             self._alert_contrib.hide()
+        self._countdown_lbl.setText("")
         self._alert_card.show()
         self._yes_btn.show()
         self._no_btn.show()
+        self.adjustSize()
+
+    def update_countdown(self, secs: int):
+        if not self._alert_card.isVisible():
+            return
+        if secs == 0:
+            self._alert_sms.setText("SMS sent automatically ✓")
+            self._countdown_lbl.setText("")
+        else:
+            self._countdown_lbl.setText(f"SMS sends automatically in {secs}s if no response")
         self.adjustSize()
 
     # ── Private ───────────────────────────────────────────────────────────

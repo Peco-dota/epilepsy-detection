@@ -41,6 +41,7 @@ WEIGHT_MIN = 0.05
 WEIGHT_MAX = 0.80
 LEARN_RATE_UP   = 1.15  # multiply on correct alert
 LEARN_RATE_DOWN = 0.85  # multiply on false positive
+AUTO_CONFIRM_SECS = 8   # seconds before SMS auto-sends if user gives no feedback
 
 
 def load_weights():
@@ -129,6 +130,8 @@ class FaceDetection:
         self.pending_feedback = False
         self.alert_scores_snapshot = {}
         self.feedback_events = []
+        self._alert_time = None
+        self._current_alert_type = None
 
         # session meta
         self.patient_name = ''
@@ -350,7 +353,7 @@ class FaceDetection:
                 print("Could not launch monitoring dashboard", e)
                 self.dashboard = None
 
-        if not self.debug and self.screen_protection:
+        if self.screen_protection:
             self._start_epilepsy_protection()
 
         self.keyboard_thread = threading.Thread(target=self._keyboard_listener, daemon=True)
@@ -372,7 +375,7 @@ class FaceDetection:
             self._print_session_summary()
             self.cap.release()
             cv2.destroyAllWindows()
-            if not self.debug and self.screen_protection:
+            if self.screen_protection:
                 self._stop_epilepsy_protection()
 
     def _run_loop(self):
@@ -534,9 +537,8 @@ class FaceDetection:
 
             if (convulsive_risk >= 1.0 or x_non_convulsive >= 1.0) and not self.sms_sent and not self.pending_feedback:
                 alert_type = "convulsive" if convulsive_risk >= 1.0 else "non-convulsive"
-                if self.sms_client:
-                    self.sms_client.send_message(f"⚠️ High {alert_type} seizure risk detected!")
-                    self.sms_sent = True
+                self._current_alert_type = alert_type
+                self._alert_time = time.time()
                 print(f"⚠️  High {alert_type} seizure risk! Convulsive: {convulsive_risk:.3f} | Non-convulsive: {x_non_convulsive:.3f}")
                 self.pending_feedback = True
                 self.alert_scores_snapshot = {
@@ -547,9 +549,26 @@ class FaceDetection:
                 _alert_target = self.dashboard if self.dashboard else self.status_window
                 if _alert_target:
                     _alert_target.show_alert(
-                        alert_type, self.sms_sent,
+                        alert_type, False,
                         self._top_contributors(alert_type, audio_score),
                     )
+
+            # Auto-confirm: if no feedback within AUTO_CONFIRM_SECS, send SMS automatically
+            if self.pending_feedback and self._alert_time is not None and not self.sms_sent:
+                elapsed = time.time() - self._alert_time
+                secs_left = max(0, int(AUTO_CONFIRM_SECS - elapsed) + 1)
+                _alert_target = self.dashboard if self.dashboard else self.status_window
+                if _alert_target:
+                    _alert_target.update_countdown(secs_left)
+                if elapsed >= AUTO_CONFIRM_SECS:
+                    if self.sms_client:
+                        self.sms_client.send_message(
+                            f"⚠️ High {self._current_alert_type} seizure risk detected! "
+                            f"(auto-confirmed — no response in {AUTO_CONFIRM_SECS}s)"
+                        )
+                    self.sms_sent = True
+                    if _alert_target:
+                        _alert_target.update_countdown(0)
 
             _pi_target = self.dashboard if self.dashboard else self.status_window
             if _pi_target:
@@ -780,6 +799,13 @@ class FaceDetection:
         label = "✅ Correct" if correct else "❌ False positive"
         print(f"\n{label} — adjusting weights...")
 
+        # User responded before auto-confirm timer fired
+        if correct and not self.sms_sent and self.sms_client:
+            self.sms_client.send_message(
+                f"⚠️ High {self._current_alert_type} seizure risk confirmed by user!"
+            )
+            self.sms_sent = True
+
         # signals that contributed meaningfully to this alert
         signal_to_weight = {
             'shake': 'w_shake', 'blink': 'w_blink', 'bpm': 'w_bpm',
@@ -801,6 +827,8 @@ class FaceDetection:
         self.pending_feedback = False
         self.alert_scores_snapshot = {}
         self.sms_sent = False  # allow future alerts
+        self._alert_time = None
+        self._current_alert_type = None
         self._pi_warning_shown = False  # allow pre-ictal warning to re-trigger
 
     def _print_session_summary(self):
@@ -861,10 +889,13 @@ class FaceDetection:
     def _start_epilepsy_protection(self):
         script_dir = os.path.dirname(os.path.abspath(__file__))
         epilepsy_script = os.path.join(script_dir, 'epilepsy_content_recognition.py')
+        cmd = [sys.executable, epilepsy_script]
+        if self.debug:
+            cmd.append('--verbose')
         self.epilepsy_process = subprocess.Popen(
-            [sys.executable, epilepsy_script],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL
+            cmd,
+            stdout=None if self.debug else subprocess.DEVNULL,
+            stderr=None if self.debug else subprocess.DEVNULL,
         )
 
     def _stop_epilepsy_protection(self):

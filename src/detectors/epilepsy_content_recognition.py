@@ -7,9 +7,11 @@ import threading
 import subprocess
 import os
 import sys
-from PySide6.QtWidgets import QApplication, QDialog, QVBoxLayout, QLabel, QPushButton
+from PySide6.QtWidgets import QApplication, QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QFrame
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QFont
+import json
+from pathlib import Path
 import Quartz
 from Quartz import CGWindowListCopyWindowInfo, CGWindowListCreateImage, CGRectNull
 from Quartz import kCGWindowListOptionOnScreenOnly, kCGWindowListExcludeDesktopElements
@@ -256,21 +258,18 @@ class EpilepsyContentDetector:
         self.prev_gray = None
         self.transition_cooldown_until = 0.0
 
-NOTIF_STYLE = """
-QDialog {
-    background-color: #1a1a2e;
-}
-QLabel { color: white; }
-QPushButton {
-    background-color: #4ecdc4;
-    color: #1a1a2e;
-    border-radius: 8px;
-    padding: 8px 24px;
-    font-weight: bold;
-    font-size: 13px;
-}
-QPushButton:hover { background-color: #94e2d5; }
-"""
+def _load_theme_colors():
+    settings_file = Path(__file__).parent.parent.parent / 'data' / 'settings.json'
+    try:
+        with open(settings_file) as f:
+            name = json.load(f).get('theme', 'light')
+    except Exception:
+        name = 'light'
+    if name == 'dark':
+        return {'bg': '#1c1917', 'card': '#2e2b28', 'border': 'rgba(80,75,65,0.55)',
+                'text': '#ede9e4', 'muted': '#9e9890', 'accent': '#d4724e'}
+    return {'bg': '#f4f3ee', 'card': '#ffffff', 'border': 'rgba(177,173,161,0.4)',
+            'text': '#1c1917', 'muted': '#8a847a', 'accent': '#c15f3c'}
 
 
 class EpilepsyProtector:
@@ -319,46 +318,77 @@ class EpilepsyProtector:
         if self.notification_dialog:
             self.notification_dialog.close()
 
-        dlg = QDialog()
-        dlg.setWindowTitle("Epilepsy Protection")
-        dlg.setStyleSheet(NOTIF_STYLE)
-        dlg.setFixedSize(480, 240)
-        dlg.setWindowFlags(Qt.WindowStaysOnTopHint | Qt.FramelessWindowHint)
-
-        layout = QVBoxLayout(dlg)
-        layout.setContentsMargins(30, 24, 30, 24)
-        layout.setSpacing(10)
-
-        t = QLabel("⚠️  EPILEPSY PROTECTION")
-        t.setFont(QFont("SF Pro Display", 18, QFont.Bold))
-        t.setStyleSheet("color: #ff6b6b;")
-        t.setAlignment(Qt.AlignCenter)
-        layout.addWidget(t)
-
+        c = _load_theme_colors()
         app_name = app_info['name'] if app_info else 'Unknown application'
-        hidden_lbl = QLabel(f"Application hidden:  {app_name}")
-        hidden_lbl.setFont(QFont("SF Pro Text", 13))
-        hidden_lbl.setStyleSheet("color: #4ecdc4;")
+        reason = ', '.join(warnings) if warnings else 'Dangerous flashing detected'
+
+        dlg = QDialog()
+        dlg.setWindowTitle("EpiGuard — Screen Protection")
+        dlg.setWindowFlags(Qt.WindowStaysOnTopHint | Qt.FramelessWindowHint | Qt.Tool)
+        dlg.setFixedWidth(420)
+        dlg.setStyleSheet(
+            f"QDialog {{ background: {c['bg']}; border-radius: 16px; }}"
+            "QLabel { background: transparent; border: none; }"
+            "QPushButton { border: none; }"
+        )
+
+        outer = QVBoxLayout(dlg)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(0)
+
+        # ── Red alert card ────────────────────────────────────────────────
+        card = QFrame()
+        card.setStyleSheet(
+            "QFrame { background: #fef2f2; border-radius: 16px; border: 1px solid #fca5a5; }"
+            "QLabel { background: transparent; border: none; }"
+        )
+        cl = QVBoxLayout(card)
+        cl.setContentsMargins(28, 24, 28, 20)
+        cl.setSpacing(6)
+
+        title = QLabel("⚠  Screen Protection Active")
+        title.setFont(QFont('', 15, QFont.Bold))
+        title.setStyleSheet("color: #b91c1c;")
+        title.setAlignment(Qt.AlignCenter)
+        cl.addWidget(title)
+
+        hidden_lbl = QLabel(f"Hidden: {app_name}")
+        hidden_lbl.setFont(QFont('', 12))
+        hidden_lbl.setStyleSheet("color: #7f1d1d;")
         hidden_lbl.setAlignment(Qt.AlignCenter)
-        layout.addWidget(hidden_lbl)
+        cl.addWidget(hidden_lbl)
 
-        reason_lbl = QLabel(f"Reason: {', '.join(warnings)}")
-        reason_lbl.setFont(QFont("SF Pro Text", 12))
-        reason_lbl.setStyleSheet("color: #feca57;")
+        reason_lbl = QLabel(reason)
+        reason_lbl.setFont(QFont('', 11))
+        reason_lbl.setStyleSheet("color: #991b1b;")
         reason_lbl.setAlignment(Qt.AlignCenter)
-        layout.addWidget(reason_lbl)
+        reason_lbl.setWordWrap(True)
+        cl.addWidget(reason_lbl)
 
-        ok_btn = QPushButton("OK")
+        cl.addSpacing(8)
+
+        ok_btn = QPushButton("Dismiss")
+        ok_btn.setFont(QFont('', 12, QFont.Bold))
+        ok_btn.setFixedHeight(38)
+        ok_btn.setStyleSheet(
+            f"QPushButton {{ background: {c['accent']}; color: white;"
+            f" border-radius: 8px; padding: 0 24px; }}"
+            f"QPushButton:hover {{ background: #ad5434; }}"
+        )
+        ok_btn.setCursor(Qt.PointingHandCursor)
         ok_btn.clicked.connect(dlg.close)
-        layout.addWidget(ok_btn, alignment=Qt.AlignCenter)
+        cl.addWidget(ok_btn)
 
-        # centre on screen
+        outer.addWidget(card)
+
+        dlg.adjustSize()
         dlg.move((self.screen_width - dlg.width()) // 2,
                   (self.screen_height - dlg.height()) // 2)
 
         self.notification_dialog = dlg
         QTimer.singleShot(10000, dlg.close)
         dlg.show()
+        dlg.raise_()
 
     def update(self, is_dangerous, warnings=None):
         with self.lock:
@@ -392,47 +422,29 @@ class ScreenMonitor:
         self.protector = EpilepsyProtector(self.app, fps=fps)
         self.is_running = True
         self.monitor_rect = None
+        self._last_result = None
+        self._result_lock = threading.Lock()
 
     def capture_screen_quartz(self):
-        window_list = CGWindowListCopyWindowInfo(
-            kCGWindowListOptionOnScreenOnly | kCGWindowListExcludeDesktopElements,
-            kCGNullWindowID
-        )
-        
-        overlay_id = self.protector.get_window_id()
-        window_ids = []
-        for win in window_list:
-            win_id = win.get('kCGWindowNumber')
-            owner = win.get('kCGWindowOwnerName', '')
-            if win_id != overlay_id and owner not in ['Python', 'python', 'Cursor']:
-                window_ids.append(win_id)
-        
-        if not window_ids:
-            return self.capture_screen_mss()
-        
         image = CGWindowListCreateImage(
             CGRectNull,
             kCGWindowListOptionOnScreenOnly | kCGWindowListExcludeDesktopElements,
             kCGNullWindowID,
             kCGWindowImageDefault
         )
-        
         if image is None:
             return self.capture_screen_mss()
-        
         width = Quartz.CGImageGetWidth(image)
         height = Quartz.CGImageGetHeight(image)
         bytes_per_row = Quartz.CGImageGetBytesPerRow(image)
-        
         pixel_data = Quartz.CGDataProviderCopyData(Quartz.CGImageGetDataProvider(image))
-        
         frame = np.frombuffer(pixel_data, dtype=np.uint8)
         frame = frame.reshape((height, bytes_per_row // 4, 4))
         frame = frame[:, :width, :]
         frame = cv2.cvtColor(frame, cv2.COLOR_BGRA2BGR)
         frame_small = cv2.resize(frame, (320, 180))
         return frame_small
-    
+
     def capture_screen_mss(self):
         with mss.mss() as sct:
             monitors = sct.monitors
@@ -446,12 +458,11 @@ class ScreenMonitor:
             frame = cv2.cvtColor(frame, cv2.COLOR_BGRA2BGR)
             frame_small = cv2.resize(frame, (320, 180))
             return frame_small
-    
+
     def capture_screen(self):
         try:
             return self.capture_screen_quartz()
-        except Exception as e:
-            print(f"Quartz capture failed: {e}, falling back to mss")
+        except Exception:
             return self.capture_screen_mss()
 
     def monitor_loop(self):
@@ -461,32 +472,40 @@ class ScreenMonitor:
             try:
                 frame = self.capture_screen()
                 result = self.detector.analyze_frame(frame)
-                is_danger = result['is_dangerous']
-                warnings = result['warnings']
-                
                 if self.verbose:
-                    print(f"DANGER: {is_danger} | flash_rate: {result['flash_rate']:.2f} Hz | warnings: {warnings}")
-                
-                self.protector.update(is_danger, warnings)
-                        
+                    print(f"DANGER: {result['is_dangerous']} | "
+                          f"flash_rate: {result['flash_rate']:.2f} Hz | "
+                          f"lum_delta: {result['max_luminance_delta']:.3f} | "
+                          f"warnings: {result['warnings']}")
+                with self._result_lock:
+                    self._last_result = result
             except Exception as e:
                 if self.verbose:
-                    print(f"Error: {e}")
+                    print(f"Capture/detect error: {e}")
             elapsed = time.time() - start_time
-            sleep_time = max(0, interval - elapsed)
-            time.sleep(sleep_time)
+            time.sleep(max(0, interval - elapsed))
+
+    def _poll_result(self):
+        """Called from Qt main thread via QTimer — safe to show dialogs here."""
+        with self._result_lock:
+            result = self._last_result
+        if result is not None:
+            self.protector.update(result['is_dangerous'], result.get('warnings'))
 
     def run(self):
         print("🛡️ Epilepsy protection running in background...")
-        print("   Press Ctrl+C to stop")
         monitor_thread = threading.Thread(target=self.monitor_loop, daemon=True)
         monitor_thread.start()
+        poll_timer = QTimer()
+        poll_timer.timeout.connect(self._poll_result)
+        poll_timer.start(100)  # poll 10x/sec from main Qt thread
         try:
             self.app.exec()
         except KeyboardInterrupt:
             print("\n👋 Shutting down...")
         finally:
             self.is_running = False
+            poll_timer.stop()
             self.protector.destroy()
 
 

@@ -12,20 +12,21 @@
     "bg": "#991B1B"
   },
   "weights": {
-    "w_bpm": 0.45,
-    "w_color": 0.45,
-    "w_shake": 0.55,
-    "w_twitch": 0.6,
-    "w_blink": 0.55,
-    "w_freeze": 0.5,
-    "w_asym": 0.6,
-    "w_blink_nc": 0.45,
-    "w_bpm_nc": 0.45
+    "w_bpm": 0.353,
+    "w_color": 0.353,
+    "w_shake": 0.52,
+    "w_twitch": 0.57,
+    "w_blink": 0.368,
+    "w_freeze": 0.47,
+    "w_asym": 0.57,
+    "w_blink_nc": 0.42,
+    "w_bpm_nc": 0.42
   },
-  "last_daily_survey_date": "2026-06-01",
+  "last_daily_survey_date": "2026-06-02",
   "last_daily_survey_config": {
     "context_multipliers": {},
     "context_summary": "",
-    "audio_enabled": true
+    "audio_enabled": false,
+    "screen_protection_enabled": true
   }
 }

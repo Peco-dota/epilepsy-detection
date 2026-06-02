@@ -309,6 +309,11 @@ class MonitoringDashboard(QWidget):
         self._alert_contrib.setStyleSheet("color: #991b1b; background: transparent; border: none;")
         al.addWidget(self._alert_contrib)
 
+        self._alert_countdown = QLabel("")
+        self._alert_countdown.setFont(QFont('', 10, QFont.Bold))
+        self._alert_countdown.setStyleSheet("color: #b91c1c; background: transparent; border: none;")
+        al.addWidget(self._alert_countdown)
+
         row2 = QHBoxLayout(); row2.setSpacing(8)
         self._yes_btn = QPushButton("✓  Real seizure")
         self._no_btn  = QPushButton("✗  False alarm")
@@ -533,7 +538,7 @@ class MonitoringDashboard(QWidget):
     def show_alert(self, alert_type: str, sms_sent: bool,
                    contributors: list | None = None):
         self._alert_detail.setText(
-            f"{alert_type.title()} · {'SMS sent' if sms_sent else 'SMS not configured'}"
+            f"{alert_type.title()} · {'SMS sent ✓' if sms_sent else 'Waiting for response...'}"
         )
         if contributors:
             self._alert_contrib.setText(
@@ -542,7 +547,19 @@ class MonitoringDashboard(QWidget):
             self._alert_contrib.show()
         else:
             self._alert_contrib.hide()
+        self._alert_countdown.setText("")
         self._alert_strip.show()
+
+    def update_countdown(self, secs: int):
+        if not self._alert_strip.isVisible():
+            return
+        if secs == 0:
+            self._alert_detail.setText(
+                self._alert_detail.text().split(" · ")[0] + " · SMS sent automatically ✓"
+            )
+            self._alert_countdown.setText("")
+        else:
+            self._alert_countdown.setText(f"SMS sends automatically in {secs}s if no response")
 
     def show_pre_ictal_warning(self, stage_label: str):
         self._pi_lbl.setText(f"⚠  Pre-ictal warning · {stage_label}")
