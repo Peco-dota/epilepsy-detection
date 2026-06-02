@@ -325,21 +325,22 @@ class EpilepsyProtector:
         dlg = QDialog()
         dlg.setWindowTitle("EpiGuard — Screen Protection")
         dlg.setWindowFlags(Qt.WindowStaysOnTopHint | Qt.FramelessWindowHint | Qt.Tool)
+        dlg.setAttribute(Qt.WA_TranslucentBackground)
         dlg.setFixedWidth(420)
         dlg.setStyleSheet(
-            f"QDialog {{ background: {c['bg']}; border-radius: 16px; }}"
+            "QDialog { background: transparent; }"
             "QLabel { background: transparent; border: none; }"
             "QPushButton { border: none; }"
         )
 
         outer = QVBoxLayout(dlg)
-        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setContentsMargins(16, 16, 16, 16)  # margin lets the shadow breathe
         outer.setSpacing(0)
 
         # ── Red alert card ────────────────────────────────────────────────
         card = QFrame()
         card.setStyleSheet(
-            "QFrame { background: #fef2f2; border-radius: 16px; border: 1px solid #fca5a5; }"
+            "QFrame { background: #fef2f2; border-radius: 18px; border: 1px solid #fca5a5; }"
             "QLabel { background: transparent; border: none; }"
         )
         cl = QVBoxLayout(card)
@@ -372,7 +373,7 @@ class EpilepsyProtector:
         ok_btn.setFixedHeight(38)
         ok_btn.setStyleSheet(
             f"QPushButton {{ background: {c['accent']}; color: white;"
-            f" border-radius: 8px; padding: 0 24px; }}"
+            f" border-radius: 10px; padding: 0 24px; }}"
             f"QPushButton:hover {{ background: #ad5434; }}"
         )
         ok_btn.setCursor(Qt.PointingHandCursor)

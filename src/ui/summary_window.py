@@ -666,9 +666,13 @@ class SessionReviewWindow(QMainWindow):
             sliders_layout.addWidget(row_widget)
 
         apply_btn = QPushButton("Save weights")
-        apply_btn.setObjectName("primary")
         apply_btn.setMinimumHeight(42)
         apply_btn.setCursor(Qt.PointingHandCursor)
+        apply_btn.setStyleSheet(
+            f"QPushButton {{ background: qlineargradient(x1:0,y1:0,x2:1,y2:0,stop:0 {ACCENT},stop:1 {ACCENT2});"
+            "color: #ffffff; border: none; border-radius: 10px; font-size: 13px; font-weight: bold; }"
+            "QPushButton:hover { background: qlineargradient(x1:0,y1:0,x2:1,y2:0,stop:0 #ad5434,stop:1 #c46444); }"
+        )
         apply_btn.clicked.connect(self._apply_manual_weights)
         sliders_layout.addWidget(apply_btn)
 
@@ -721,16 +725,26 @@ class SessionReviewWindow(QMainWindow):
 
         self.send_btn = QPushButton("Send")
         self.send_btn.setFixedSize(80, 60)
-        self.send_btn.setObjectName("primary")
         self.send_btn.setCursor(Qt.PointingHandCursor)
+        self.send_btn.setStyleSheet(
+            f"QPushButton {{ background: qlineargradient(x1:0,y1:0,x2:1,y2:0,stop:0 {ACCENT},stop:1 {ACCENT2});"
+            "color: #ffffff; border: none; border-radius: 10px; font-size: 13px; font-weight: bold; }"
+            "QPushButton:hover { background: qlineargradient(x1:0,y1:0,x2:1,y2:0,stop:0 #ad5434,stop:1 #c46444); }"
+            "QPushButton:disabled { background: rgba(177,173,161,0.35); color: #b1ada1; }"
+        )
         self.send_btn.clicked.connect(self._on_send)
         input_h.addWidget(self.send_btn)
         right_layout.addWidget(input_container)
 
         self.save_btn = QPushButton("Save Updated Weights")
-        self.save_btn.setObjectName("save")
         self.save_btn.setMinimumHeight(44)
         self.save_btn.setCursor(Qt.PointingHandCursor)
+        self.save_btn.setStyleSheet(
+            "QPushButton { background: qlineargradient(x1:0,y1:0,x2:1,y2:0,stop:0 #15803d,stop:1 #16a34a);"
+            "color: #ffffff; border: none; border-radius: 10px; font-size: 13px; font-weight: bold; }"
+            "QPushButton:hover { background: #166534; }"
+            "QPushButton:disabled { background: rgba(177,173,161,0.35); color: #b1ada1; }"
+        )
         self.save_btn.setVisible(False)
         self.save_btn.clicked.connect(self._on_save_weights)
         right_layout.addWidget(self.save_btn)

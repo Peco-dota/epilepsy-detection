@@ -132,6 +132,7 @@ class FaceDetection:
         self.feedback_events = []
         self._alert_time = None
         self._current_alert_type = None
+        self.alert_log = []  # [{type, scores, outcome}] — one entry per alert
 
         # session meta
         self.patient_name = ''
@@ -546,6 +547,11 @@ class FaceDetection:
                     'color': self.color, 'asym': self.asym, 'freeze': self.freeze,
                     'twitch': self.twitch, 'eye': self.eye,
                 }
+                self.alert_log.append({
+                    'type': alert_type,
+                    'scores': dict(self.alert_scores_snapshot),
+                    'outcome': 'pending',
+                })
                 _alert_target = self.dashboard if self.dashboard else self.status_window
                 if _alert_target:
                     _alert_target.show_alert(
@@ -567,6 +573,8 @@ class FaceDetection:
                             f"(auto-confirmed — no response in {AUTO_CONFIRM_SECS}s)"
                         )
                     self.sms_sent = True
+                    if self.alert_log:
+                        self.alert_log[-1]['outcome'] = 'auto-confirmed (no response)'
                     if _alert_target:
                         _alert_target.update_countdown(0)
 
@@ -824,11 +832,17 @@ class FaceDetection:
         self._save_weights()
 
         self.feedback_events.append({'scores': dict(scores), 'correct': correct})
+        if self.alert_log:
+            self.alert_log[-1]['outcome'] = 'confirmed by user' if correct else 'false alarm'
         self.pending_feedback = False
         self.alert_scores_snapshot = {}
         self.sms_sent = False  # allow future alerts
         self._alert_time = None
         self._current_alert_type = None
+        if self._pi_warning_shown:
+            _pi_target = self.dashboard if self.dashboard else self.status_window
+            if _pi_target:
+                _pi_target.clear_pre_ictal_warning()
         self._pi_warning_shown = False  # allow pre-ictal warning to re-trigger
 
     def _print_session_summary(self):
@@ -837,6 +851,26 @@ class FaceDetection:
         print("="*60)
 
         summary_text = self.csv_logger.get_summary_for_llm()
+
+        # Append alert history so Gemini knows what actually triggered
+        if self.alert_log:
+            alert_section = f"\nALERT EVENTS ({len(self.alert_log)} total during session):\n"
+            for i, ev in enumerate(self.alert_log, 1):
+                top = sorted(ev['scores'].items(), key=lambda x: x[1], reverse=True)[:3]
+                top_str = ', '.join(f"{k}={v:.2f}" for k, v in top if v > 0.1)
+                alert_section += (
+                    f"- Alert {i}: {ev['type']} seizure risk triggered. "
+                    f"Outcome: {ev['outcome']}. "
+                    f"Top signals at alert time: {top_str}\n"
+                )
+            alert_section += (
+                "NOTE: These alerts mean the weighted risk formula crossed the 1.0 threshold — "
+                "this is a clinically significant event that MUST be discussed in the analysis, "
+                "even if average scores appear low. Brief spikes are normal in seizure events.\n"
+            )
+            summary_text += alert_section
+        else:
+            summary_text += "\nALERT EVENTS: None — no seizure risk threshold was crossed this session.\n"
 
         ai_analysis = None
         if self.ai_client:

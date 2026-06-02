@@ -12,15 +12,15 @@
     "bg": "#991B1B"
   },
   "weights": {
-    "w_bpm": 0.353,
-    "w_color": 0.353,
-    "w_shake": 0.52,
-    "w_twitch": 0.57,
-    "w_blink": 0.368,
-    "w_freeze": 0.47,
-    "w_asym": 0.57,
-    "w_blink_nc": 0.42,
-    "w_bpm_nc": 0.42
+    "w_bpm": 0.32,
+    "w_color": 0.27,
+    "w_shake": 0.29,
+    "w_twitch": 0.43,
+    "w_blink": 0.24,
+    "w_freeze": 0.44,
+    "w_asym": 0.54,
+    "w_blink_nc": 0.29,
+    "w_bpm_nc": 0.39
   },
   "last_daily_survey_date": "2026-06-02",
   "last_daily_survey_config": {
